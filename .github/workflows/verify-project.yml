@@ -41,6 +41,11 @@ on:
         required: false
         default: ""
         type: string
+      publish-config-path:
+        description: Optional repository-relative Baby2B publishing manifest path.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -76,3 +81,8 @@ jobs:
       - name: Evidence contract
         if: inputs['evidence-command'] != ''
         run: ${{ inputs['evidence-command'] }}
+      - name: Validate Baby2B publishing contract
+        if: inputs['publish-config-path'] != ''
+        uses: Tiancheng-Xu/.github/.github/actions/verify-baby2b-publish@main
+        with:
+          config-path: ${{ inputs['publish-config-path'] }}

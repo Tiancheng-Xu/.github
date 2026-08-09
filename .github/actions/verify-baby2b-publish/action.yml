@@ -1,0 +1,21 @@
+name: Verify Baby2B publishing contract
+description: Validate a repository's Baby2B production and Evidence publishing manifest.
+
+inputs:
+  config-path:
+    description: Repository-relative path to the flat YAML publishing manifest.
+    required: true
+
+outputs:
+  slug:
+    description: Validated project slug.
+  site-kind:
+    description: Validated site kind (project or evidence-hub).
+  production-url:
+    description: Validated baby2b.online production URL.
+  evidence-url:
+    description: Validated Evidence URL.
+
+runs:
+  using: node20
+  main: index.js
