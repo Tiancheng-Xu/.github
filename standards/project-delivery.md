@@ -25,3 +25,13 @@
 - Never commit credentials, private paths, raw private datasets, model weights,
   personal information, or unapproved source material.
 
+## Baby2B production
+
+- Follow [the Baby2B publishing standard](baby2b-publishing.md) for every
+  deployable web repository.
+- Store the validated contract at `.github/baby2b-publish.yml` and pass it to
+  the shared workflow through `publish-config-path`.
+- GitHub Actions verifies and builds; Cloudflare Pages Git Integration deploys
+  the declared production branch.
+- Treat `*.baby2b.online` as production and `pages.dev` only as a diagnostic or
+  rollback address.
