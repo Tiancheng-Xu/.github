@@ -1,0 +1,73 @@
+name: Shared project verification
+
+on:
+  workflow_call:
+    inputs:
+      package-manager:
+        description: npm or pnpm
+        required: false
+        default: pnpm
+        type: string
+      node-version:
+        required: false
+        default: "22"
+        type: string
+      working-directory:
+        required: false
+        default: .
+        type: string
+      install-command:
+        required: true
+        type: string
+      check-command:
+        required: false
+        default: ""
+        type: string
+      test-command:
+        required: true
+        type: string
+      typecheck-command:
+        required: false
+        default: ""
+        type: string
+      build-command:
+        required: true
+        type: string
+      evidence-command:
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ inputs.package-manager }}
+      - name: Enable Corepack
+        if: inputs.package-manager == 'pnpm'
+        run: corepack enable
+      - name: Install dependencies
+        run: ${{ inputs.install-command }}
+      - name: Static checks
+        if: inputs.check-command != ''
+        run: ${{ inputs.check-command }}
+      - name: Tests
+        run: ${{ inputs.test-command }}
+      - name: Type check
+        if: inputs.typecheck-command != ''
+        run: ${{ inputs.typecheck-command }}
+      - name: Production build
+        run: ${{ inputs.build-command }}
+      - name: Evidence contract
+        if: inputs.evidence-command != ''
+        run: ${{ inputs.evidence-command }}
