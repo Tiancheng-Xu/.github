@@ -12,6 +12,10 @@ on:
         required: false
         default: "22"
         type: string
+      pnpm-version:
+        required: false
+        default: "11.17.0"
+        type: string
       working-directory:
         required: false
         default: .
@@ -46,28 +50,29 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ inputs['working-directory'] }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        if: inputs['package-manager'] == 'pnpm'
+        with:
+          version: ${{ inputs['pnpm-version'] }}
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ inputs.node-version }}
-          cache: ${{ inputs.package-manager }}
-      - name: Enable Corepack
-        if: inputs.package-manager == 'pnpm'
-        run: corepack enable
+          node-version: ${{ inputs['node-version'] }}
+          cache: ${{ inputs['package-manager'] }}
       - name: Install dependencies
-        run: ${{ inputs.install-command }}
+        run: ${{ inputs['install-command'] }}
       - name: Static checks
-        if: inputs.check-command != ''
-        run: ${{ inputs.check-command }}
+        if: inputs['check-command'] != ''
+        run: ${{ inputs['check-command'] }}
       - name: Tests
-        run: ${{ inputs.test-command }}
+        run: ${{ inputs['test-command'] }}
       - name: Type check
-        if: inputs.typecheck-command != ''
-        run: ${{ inputs.typecheck-command }}
+        if: inputs['typecheck-command'] != ''
+        run: ${{ inputs['typecheck-command'] }}
       - name: Production build
-        run: ${{ inputs.build-command }}
+        run: ${{ inputs['build-command'] }}
       - name: Evidence contract
-        if: inputs.evidence-command != ''
-        run: ${{ inputs.evidence-command }}
+        if: inputs['evidence-command'] != ''
+        run: ${{ inputs['evidence-command'] }}
