@@ -79,10 +79,14 @@ canonical implementation.
 
 ### Remote workflow presence
 
-Every non-empty project repository must contain a caller workflow that invokes the
-central reusable policy at a pinned default-branch reference. A project verification
-workflow may call the same reusable job, but silently relying on a local hook is not
-accepted.
+Every non-empty project repository must contain the byte-for-byte canonical
+`.github/workflows/repository-policy.yml` caller. A fixed caller is intentionally less
+flexible than arbitrary YAML: it prevents comments, disabled conditions, invalid jobs,
+or local remote configuration from imitating an active check. The lightweight policy
+workflow verifies commits and source only. A project that declares build output must
+also use the shared verifier that actually builds before calling the policy action; a
+checkout-only workflow must not pretend to validate a gitignored output directory.
+Silently relying on a local hook is not accepted.
 
 ## Rollout
 
@@ -100,8 +104,8 @@ accepted.
 
 ## Failure Handling
 
-- Missing policy checkout, owner identity, workflow caller, or build directory is a
-  blocking error, never a warning.
+- Missing policy checkout, owner identity, active pull-request caller, or a declared
+  post-build directory is a blocking error, never a warning.
 - A binary decoding failure is reported with the path and skipped only when the file
   is positively classified as binary.
 - A repository with legacy violations receives a deterministic path list and remains

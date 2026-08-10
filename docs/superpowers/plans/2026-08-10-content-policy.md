@@ -47,9 +47,11 @@
 
 **Interfaces:**
 - Produces: reusable workflow `Tiancheng-Xu/.github/.github/workflows/verify-repository-policy.yml@main`.
-- Consumes: caller checkout, event before/after SHAs, owner policy, and optional build output.
+- Consumes: caller checkout, event before/after SHAs, and the centrally fixed owner
+  policy. Build output is accepted only by the action after the shared project verifier
+  has run the real build.
 
-- [ ] Write failing workflow-contract tests requiring checkout, full-history availability, policy action invocation, and explicit build-output input.
+- [ ] Write failing workflow-contract tests requiring checkout, full-history availability, fixed owner identity, policy action invocation, and separation between source-only and post-build verification.
 - [ ] Run the focused test and observe the missing workflow/action failure.
 - [ ] Add the action and reusable workflow; make `verify-project.yml` call the same action rather than duplicate checks.
 - [ ] Run all central repository tests and validate YAML references.
@@ -114,7 +116,8 @@
 - Repair first-party public wording only where the audit requires it.
 
 **Interfaces:**
-- Produces: one policy PR per non-empty repository and an explicit record for empty repositories.
+- Produces: one byte-for-byte canonical policy caller PR per non-empty repository and
+  an explicit record for empty repositories.
 - Consumes: central reusable workflow published on its default branch.
 
 - [ ] Publish and verify the central policy before creating callers.

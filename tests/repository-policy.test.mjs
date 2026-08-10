@@ -8,13 +8,15 @@ import { fileURLToPath } from "node:url";
 
 import {
   inspectCommitRange,
+  REPOSITORY_POLICY_CALLER,
   scanCandidateTree,
   validateRefName,
+  validatePolicyCaller,
 } from "../scripts/repository-policy.mjs";
 
 const owner = {
   name: "tiancheng-Xu",
-  emails: ["271251549@qq.com"],
+  emails: ["owner@example.invalid"],
 };
 
 const productOnlyPhrase = String.fromCodePoint(0x4f5c, 0x4e1a);
@@ -106,10 +108,44 @@ test("rejects automation attribution trailers even with an owner commit", () => 
   assert.ok(violations.some((item) => item.code === "automation-attribution"));
 });
 
+test("rejects arbitrary attribution trailers carrying automation identities", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "README.md"), "unsafe review trailer\n");
+  git(cwd, "add", "README.md");
+  git(
+    cwd,
+    "commit",
+    "-qm",
+    "unsafe review trailer\n\nReviewed-by: Codex Worker <automation@example.invalid>",
+  );
+
+  const violations = inspectCommitRange(cwd, "HEAD~1..HEAD", owner);
+  assert.ok(violations.some((item) => item.code === "automation-attribution"));
+});
+
+test("rejects normalized or continued automation trailers", () => {
+  for (const message of [
+    "normalized trailer\n\nAssisted-by : Codex Worker",
+    "continued trailer\n\nCo-authored-by:\n Codex Worker <automation@example.invalid>",
+    "custom trailer\n\nAI: Codex Worker",
+  ]) {
+    const cwd = createRepository();
+    writeFileSync(join(cwd, "README.md"), `${message.split("\n")[0]}\n`);
+    git(cwd, "add", "README.md");
+    git(cwd, "commit", "-qm", message);
+    const violations = inspectCommitRange(cwd, "HEAD~1..HEAD", owner);
+    assert.ok(
+      violations.some((item) => item.code === "automation-attribution"),
+      message,
+    );
+  }
+});
+
 test("accepts a product branch and rejects automation or retired aliases", () => {
   assert.deepEqual(validateRefName("refs/heads/personal-ai-agent"), []);
   assert.ok(validateRefName("refs/heads/codex/agent-ui").length > 0);
   assert.ok(validateRefName(`refs/heads/${retiredAlias}-agent`).length > 0);
+  assert.ok(validateRefName(`refs/heads/${productOnlyPhrase}`).length > 0);
 });
 
 test("scans the full tracked tree and reports configured public wording", () => {
@@ -145,6 +181,38 @@ test("scans configured build output even when it is not tracked", () => {
   );
 });
 
+test("blocks a configured build output path that does not exist", () => {
+  const cwd = createRepository();
+  const violations = scanCandidateTree(cwd, {
+    blockedTerms: [productOnlyPhrase, retiredAlias],
+    buildOutputPaths: ["dist"],
+  });
+
+  assert.ok(violations.some((item) => item.code === "build-output-missing"));
+});
+
+test("never scans a build output path outside the repository", () => {
+  const cwd = createRepository();
+  const violations = scanCandidateTree(cwd, {
+    blockedTerms: [productOnlyPhrase, retiredAlias],
+    buildOutputPaths: ["../outside"],
+  });
+
+  assert.ok(violations.some((item) => item.code === "unsafe-build-output-path"));
+});
+
+test("scans the staged candidate instead of a safer unstaged overwrite", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "README.md"), `unsafe ${productOnlyPhrase}\n`);
+  git(cwd, "add", "README.md");
+  writeFileSync(join(cwd, "README.md"), "safe unstaged overwrite\n");
+
+  const violations = scanCandidateTree(cwd, {
+    blockedTerms: [productOnlyPhrase, retiredAlias],
+  });
+  assert.ok(violations.some((item) => item.code === "blocked-public-content"));
+});
+
 test("does not scan dependencies, vendor files, licenses, or binary data", () => {
   const cwd = createRepository();
   mkdirSync(join(cwd, "node_modules"));
@@ -159,6 +227,31 @@ test("does not scan dependencies, vendor files, licenses, or binary data", () =>
     scanCandidateTree(cwd, { blockedTerms: [productOnlyPhrase, retiredAlias] }),
     [],
   );
+});
+
+test("reports non-UTF-8 tracked text instead of silently skipping it", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "legacy.txt"), Buffer.from([0x81, 0x40, 0x41]));
+  git(cwd, "add", "legacy.txt");
+
+  const violations = scanCandidateTree(cwd, {
+    blockedTerms: [productOnlyPhrase, retiredAlias],
+  });
+  assert.ok(violations.some((item) => item.code === "content-decoding-failed"));
+});
+
+test("skips large tracked binaries with and without an early NUL", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "large.bin"), Buffer.alloc(33 * 1024 * 1024));
+  const largeNoNul = Buffer.alloc(33 * 1024 * 1024, 0xff);
+  largeNoNul.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  writeFileSync(join(cwd, "large-no-nul.bin"), largeNoNul);
+  git(cwd, "add", "large.bin", "large-no-nul.bin");
+
+  const violations = scanCandidateTree(cwd, {
+    blockedTerms: [productOnlyPhrase, retiredAlias],
+  });
+  assert.deepEqual(violations, []);
 });
 
 test("pre-push hook allows a compliant owner tree", () => {
@@ -189,6 +282,79 @@ test("pre-push hook blocks configured public wording", () => {
   assert.doesNotMatch(result.stderr, new RegExp(productOnlyPhrase));
 });
 
+test("pre-push hook validates the actual remote destination ref", () => {
+  const { cwd } = createPushFixture();
+  const result = spawnSync(
+    "git",
+    ["push", "origin", "HEAD:refs/heads/codex/unsafe"],
+    { cwd, encoding: "utf8" },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unsafe-ref-name/);
+});
+
+test("new-branch push cannot hide a non-owner commit behind a local remote ref", () => {
+  const { cwd } = createPushFixture();
+  writeFileSync(join(cwd, "README.md"), "automation middle commit\n");
+  git(cwd, "add", "README.md");
+  git(
+    cwd,
+    "-c",
+    "user.name=OpenAI Automation",
+    "-c",
+    "user.email=automation@example.invalid",
+    "commit",
+    "-qm",
+    "automation middle commit",
+    "--author=Codex Worker <automation@example.invalid>",
+  );
+  const hiddenCommit = git(cwd, "rev-parse", "HEAD");
+  git(cwd, "update-ref", "refs/remotes/fake/base", hiddenCommit);
+  writeFileSync(join(cwd, "README.md"), "safe owner tip\n");
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "safe owner tip");
+
+  const result = spawnSync("git", ["push", "origin", "HEAD"], {
+    cwd,
+    encoding: "utf8",
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /author-owner-mismatch|automation-identity/);
+});
+
+test("caller validation requires an active PR reusable-workflow job", () => {
+  const cwd = createRepository();
+  mkdirSync(join(cwd, ".github", "workflows"), { recursive: true });
+  const reference =
+    "Tiancheng-Xu/.github/.github/workflows/verify-repository-policy.yml@main";
+  writeFileSync(
+    join(cwd, ".github", "workflows", "comment-only.yml"),
+    `# pull_request:\n#       uses: ${reference}\n`,
+  );
+  assert.ok(validatePolicyCaller(cwd).length > 0);
+
+  writeFileSync(
+    join(cwd, ".github", "workflows", "repository-policy.yml"),
+    REPOSITORY_POLICY_CALLER,
+  );
+  assert.deepEqual(validatePolicyCaller(cwd), []);
+});
+
+test("caller validation rejects copied central filenames and disabled jobs", () => {
+  const cwd = createRepository();
+  mkdirSync(join(cwd, ".github", "workflows"), { recursive: true });
+  mkdirSync(join(cwd, "scripts"));
+  const reference =
+    "Tiancheng-Xu/.github/.github/workflows/verify-repository-policy.yml@main";
+  writeFileSync(join(cwd, "scripts", "repository-policy.mjs"), "// imitation\n");
+  writeFileSync(
+    join(cwd, ".github", "workflows", "verify-repository-policy.yml"),
+    `on:\n  pull_request:\njobs:\n  policy:\n    if: false\n    uses: ${reference}\n`,
+  );
+  assert.ok(validatePolicyCaller(cwd).length > 0);
+});
+
 test("audit mode checks the uncommitted tree and requires a remote caller", () => {
   const cwd = createRepository();
   const missingCaller = spawnSync(
@@ -213,7 +379,7 @@ test("audit mode checks the uncommitted tree and requires a remote caller", () =
   mkdirSync(join(cwd, ".github", "workflows"), { recursive: true });
   writeFileSync(
     join(cwd, ".github", "workflows", "repository-policy.yml"),
-    "jobs:\n  policy:\n    uses: Tiancheng-Xu/.github/.github/workflows/verify-repository-policy.yml@main\n",
+    REPOSITORY_POLICY_CALLER,
   );
   writeFileSync(join(cwd, "untracked.md"), `unsafe ${productOnlyPhrase}\n`);
 

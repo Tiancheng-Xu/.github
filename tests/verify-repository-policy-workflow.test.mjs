@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { REPOSITORY_POLICY_CALLER } from "../scripts/repository-policy.mjs";
 
 const action = readFileSync(
   ".github/actions/verify-repository-policy/action.yml",
@@ -14,6 +15,14 @@ const sharedProjectWorkflow = readFileSync(
   ".github/workflows/verify-project.yml",
   "utf8",
 );
+const callerWorkflow = readFileSync(
+  ".github/workflows/repository-policy.yml",
+  "utf8",
+);
+
+test("central repository installs the byte-for-byte canonical caller", () => {
+  assert.equal(callerWorkflow, REPOSITORY_POLICY_CALLER);
+});
 
 test("composite action invokes the central policy engine against the caller workspace", () => {
   assert.match(action, /using:\s*composite/);
@@ -32,16 +41,27 @@ test("reusable workflow checks out full history with read-only permissions", () 
   assert.match(workflow, /fetch-depth:\s*0/);
 });
 
+test("reusable workflow fixes the repository owner identity centrally", () => {
+  assert.doesNotMatch(workflow, /^\s{6}owner-name:\s*$/m);
+  assert.doesNotMatch(workflow, /^\s{6}owner-emails:\s*$/m);
+  assert.match(workflow, /owner-name:\s*tiancheng-Xu/);
+  assert.doesNotMatch(workflow, /@qq\.com/);
+  assert.doesNotMatch(sharedProjectWorkflow, /@qq\.com/);
+});
+
 test("reusable workflow computes a commit range and invokes the shared action", () => {
   assert.match(workflow, /id:\s*commit-range/);
   assert.match(workflow, /github\.event\.pull_request\.base\.sha/);
   assert.match(workflow, /github\.event\.before/);
+  assert.match(workflow, /github\.event\.repository\.default_branch/);
+  assert.match(workflow, /git merge-base/);
+  assert.match(workflow, /echo "range=\$HEAD_SHA"/);
   assert.match(
     workflow,
     /uses:\s*Tiancheng-Xu\/\.github\/\.github\/actions\/verify-repository-policy@main/,
   );
   assert.match(workflow, /commit-range:\s*\$\{\{ steps\.commit-range\.outputs\.range \}\}/);
-  assert.match(workflow, /build-output-paths:\s*\$\{\{ inputs\.build-output-paths \}\}/);
+  assert.doesNotMatch(workflow, /^\s{6}build-output-paths:\s*$/m);
 });
 
 test("shared project verification runs the same policy after its production build", () => {
@@ -63,4 +83,3 @@ test("policy workflows never deploy or receive write permission", () => {
     assert.doesNotMatch(source, /contents:\s*write/);
   }
 });
-
