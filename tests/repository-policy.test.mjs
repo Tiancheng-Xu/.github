@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   inspectCommitRange,
@@ -18,6 +19,12 @@ const owner = {
 
 const productOnlyPhrase = String.fromCodePoint(0x4f5c, 0x4e1a);
 const retiredAlias = String.fromCodePoint(0x79, 0x69, 0x64, 0x65, 0x6e, 0x67);
+const policyHooksPath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "scripts",
+  "git-hooks",
+);
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -32,6 +39,24 @@ function createRepository() {
   git(cwd, "add", "README.md");
   git(cwd, "commit", "-qm", "initial owner commit");
   return cwd;
+}
+
+function createPushFixture() {
+  const root = mkdtempSync(join(tmpdir(), "repository-policy-push-"));
+  const remote = join(root, "remote.git");
+  const cwd = join(root, "project");
+  git(root, "init", "--bare", "-q", remote);
+  git(root, "init", "-q", cwd);
+  git(cwd, "config", "user.name", owner.name);
+  git(cwd, "config", "user.email", owner.emails[0]);
+  git(cwd, "config", "workflow.ownerName", owner.name);
+  git(cwd, "config", "workflow.ownerEmail", owner.emails[0]);
+  git(cwd, "config", "core.hooksPath", policyHooksPath);
+  git(cwd, "remote", "add", "origin", remote);
+  writeFileSync(join(cwd, "README.md"), "safe public content\n");
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "initial owner commit");
+  return { cwd, remote };
 }
 
 test("accepts a commit authored and committed by the configured owner", () => {
@@ -135,3 +160,30 @@ test("does not scan dependencies, vendor files, licenses, or binary data", () =>
   );
 });
 
+test("pre-push hook allows a compliant owner tree", () => {
+  const { cwd } = createPushFixture();
+  const result = spawnSync("git", ["push", "-u", "origin", "HEAD"], {
+    cwd,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout + result.stderr, /Repository policy passed/);
+});
+
+test("pre-push hook blocks configured public wording", () => {
+  const { cwd } = createPushFixture();
+  git(cwd, "push", "-u", "origin", "HEAD");
+  writeFileSync(join(cwd, "README.md"), `unsafe ${productOnlyPhrase}\n`);
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "unsafe content");
+
+  const result = spawnSync("git", ["push", "origin", "HEAD"], {
+    cwd,
+    encoding: "utf8",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /blocked-public-content/);
+  assert.doesNotMatch(result.stderr, new RegExp(productOnlyPhrase));
+});
