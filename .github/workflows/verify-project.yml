@@ -46,6 +46,11 @@ on:
         required: false
         default: ""
         type: string
+      policy-build-output-paths:
+        description: Optional comma-separated repository-relative build output paths.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -58,6 +63,8 @@ jobs:
         working-directory: ${{ inputs['working-directory'] }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         if: inputs['package-manager'] == 'pnpm'
         with:
@@ -78,6 +85,29 @@ jobs:
         run: ${{ inputs['typecheck-command'] }}
       - name: Production build
         run: ${{ inputs['build-command'] }}
+      - name: Resolve introduced commit range
+        id: commit-range
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          null_sha=0000000000000000000000000000000000000000
+          if [[ -n "$BASE_SHA" && "$BASE_SHA" != "$null_sha" ]] && \
+             git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "range=$BASE_SHA..$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "range=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Repository policy
+        uses: Tiancheng-Xu/.github/.github/actions/verify-repository-policy@main
+        with:
+          owner-name: tiancheng-Xu
+          owner-emails: 271251549@qq.com
+          revision: ${{ github.event.pull_request.head.sha || github.sha }}
+          commit-range: ${{ steps.commit-range.outputs.range }}
+          build-output-paths: ${{ inputs['policy-build-output-paths'] }}
       - name: Evidence contract
         if: inputs['evidence-command'] != ''
         run: ${{ inputs['evidence-command'] }}

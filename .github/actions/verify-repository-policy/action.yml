@@ -1,0 +1,50 @@
+name: Verify repository policy
+description: Verify owner authorship, ref names, tracked content, and build output.
+
+inputs:
+  owner-name:
+    description: Required human repository owner display name.
+    required: true
+  owner-emails:
+    description: Comma-separated allowed owner email addresses.
+    required: false
+    default: ""
+  revision:
+    description: Candidate revision whose full tree must be scanned.
+    required: false
+    default: HEAD
+  commit-range:
+    description: Optional Git revision range containing newly introduced commits.
+    required: false
+    default: ""
+  build-output-paths:
+    description: Comma-separated repository-relative build output paths.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Run repository policy
+      shell: bash
+      env:
+        REPOSITORY_POLICY_OWNER_NAME: ${{ inputs.owner-name }}
+        REPOSITORY_POLICY_OWNER_EMAILS: ${{ inputs.owner-emails }}
+        POLICY_REVISION: ${{ inputs.revision }}
+        POLICY_COMMIT_RANGE: ${{ inputs.commit-range }}
+        POLICY_BUILD_OUTPUT_PATHS: ${{ inputs.build-output-paths }}
+      run: |
+        set -euo pipefail
+        policy_script="$GITHUB_ACTION_PATH/../../../scripts/repository-policy.mjs"
+        args=(--mode ci --root "$GITHUB_WORKSPACE" --revision "$POLICY_REVISION")
+        if [[ -n "$POLICY_COMMIT_RANGE" ]]; then
+          args+=(--range "$POLICY_COMMIT_RANGE")
+        fi
+        if [[ -n "$POLICY_BUILD_OUTPUT_PATHS" ]]; then
+          IFS=',' read -r -a output_paths <<< "$POLICY_BUILD_OUTPUT_PATHS"
+          for output_path in "${output_paths[@]}"; do
+            [[ -n "$output_path" ]] && args+=(--build-output "$output_path")
+          done
+        fi
+        node "$policy_script" "${args[@]}"
+

@@ -1,0 +1,56 @@
+name: Shared repository policy
+
+on:
+  workflow_call:
+    inputs:
+      owner-name:
+        description: Required human repository owner display name.
+        required: false
+        default: tiancheng-Xu
+        type: string
+      owner-emails:
+        description: Comma-separated allowed owner email addresses.
+        required: false
+        default: 271251549@qq.com
+        type: string
+      build-output-paths:
+        description: Comma-separated repository-relative build output paths.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  repository-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out candidate with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve introduced commit range
+        id: commit-range
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          null_sha=0000000000000000000000000000000000000000
+          if [[ -n "$BASE_SHA" && "$BASE_SHA" != "$null_sha" ]] && \
+             git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "range=$BASE_SHA..$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "range=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify repository policy
+        uses: Tiancheng-Xu/.github/.github/actions/verify-repository-policy@main
+        with:
+          owner-name: ${{ inputs.owner-name }}
+          owner-emails: ${{ inputs.owner-emails }}
+          revision: ${{ github.event.pull_request.head.sha || github.sha }}
+          commit-range: ${{ steps.commit-range.outputs.range }}
+          build-output-paths: ${{ inputs.build-output-paths }}
+
