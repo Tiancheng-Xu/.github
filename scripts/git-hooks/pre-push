@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+policy_script="$hook_dir/../repository-policy.mjs"
+repository_root=$(git rev-parse --show-toplevel)
+push_input=$(mktemp "${TMPDIR:-/tmp}/repository-policy.XXXXXX")
+trap 'rm -f "$push_input"' EXIT HUP INT TERM
+
+cat > "$push_input"
+node "$policy_script" --mode pre-push --root "$repository_root" < "$push_input"
+
+git_dir=$(git rev-parse --git-dir)
+local_hook="$git_dir/hooks/pre-push"
+if [ -x "$local_hook" ]; then
+  "$local_hook" "$@" < "$push_input"
+fi
+
