@@ -25,6 +25,7 @@ const policyHooksPath = join(
   "scripts",
   "git-hooks",
 );
+const policyScript = join(policyHooksPath, "..", "repository-policy.mjs");
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -186,4 +187,53 @@ test("pre-push hook blocks configured public wording", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /blocked-public-content/);
   assert.doesNotMatch(result.stderr, new RegExp(productOnlyPhrase));
+});
+
+test("audit mode checks the uncommitted tree and requires a remote caller", () => {
+  const cwd = createRepository();
+  const missingCaller = spawnSync(
+    "node",
+    [
+      policyScript,
+      "--mode",
+      "audit",
+      "--root",
+      cwd,
+      "--owner-name",
+      owner.name,
+      "--owner-email",
+      owner.emails[0],
+      "--require-caller",
+    ],
+    { cwd, encoding: "utf8" },
+  );
+  assert.notEqual(missingCaller.status, 0);
+  assert.match(missingCaller.stderr, /missing-policy-caller/);
+
+  mkdirSync(join(cwd, ".github", "workflows"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".github", "workflows", "repository-policy.yml"),
+    "jobs:\n  policy:\n    uses: Tiancheng-Xu/.github/.github/workflows/verify-repository-policy.yml@main\n",
+  );
+  writeFileSync(join(cwd, "untracked.md"), `unsafe ${productOnlyPhrase}\n`);
+
+  const unsafeTree = spawnSync(
+    "node",
+    [
+      policyScript,
+      "--mode",
+      "audit",
+      "--root",
+      cwd,
+      "--owner-name",
+      owner.name,
+      "--owner-email",
+      owner.emails[0],
+      "--require-caller",
+    ],
+    { cwd, encoding: "utf8" },
+  );
+  assert.notEqual(unsafeTree.status, 0);
+  assert.match(unsafeTree.stderr, /blocked-public-content/);
+  assert.doesNotMatch(unsafeTree.stderr, new RegExp(productOnlyPhrase));
 });

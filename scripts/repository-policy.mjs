@@ -86,7 +86,7 @@ function findBlockedTerms(buffer, blockedTerms) {
 function trackedPaths(root, revision) {
   const args = revision
     ? ["ls-tree", "-r", "--name-only", "-z", revision]
-    : ["ls-files", "-z"];
+    : ["ls-files", "-z", "--cached", "--others", "--exclude-standard"];
   return git(root, args).split("\0").filter(Boolean);
 }
 
@@ -190,6 +190,29 @@ export function validateRefName(refName) {
     }
   }
   return violations;
+}
+
+export function validatePolicyCaller(root, revision) {
+  const repositoryRoot = resolve(root);
+  const workflowPaths = trackedPaths(repositoryRoot, revision).filter((path) =>
+    /^\.github\/workflows\/[^/]+\.ya?ml$/i.test(path),
+  );
+  const callerReferences = [
+    "Tiancheng-Xu/.github/.github/workflows/verify-repository-policy.yml@main",
+    "Tiancheng-Xu/.github/.github/actions/verify-repository-policy@main",
+  ];
+  for (const path of workflowPaths) {
+    let content;
+    try {
+      content = trackedBuffer(repositoryRoot, path, revision).toString("utf8");
+    } catch {
+      continue;
+    }
+    if (callerReferences.some((reference) => content.includes(reference))) {
+      return [];
+    }
+  }
+  return [{ code: "missing-policy-caller", path: ".github/workflows" }];
 }
 
 function parseCommitLog(output) {
@@ -301,6 +324,10 @@ function parseArguments(argv) {
     else if (argument === "--owner-name") options.ownerName = value;
     else if (argument === "--owner-email") options.ownerEmails.push(value);
     else if (argument === "--build-output") options.buildOutputPaths.push(value);
+    else if (argument === "--require-caller") {
+      options.requireCaller = true;
+      continue;
+    }
     else continue;
     index += 1;
   }
@@ -365,8 +392,33 @@ export function runCli(argv = process.argv.slice(2)) {
         : inspectCommitList(root, [revision], owner)),
     );
     violations.push(...scanCandidateTree(root, { revision, buildOutputPaths }));
+    if (options.requireCaller) {
+      violations.push(...validatePolicyCaller(root, revision));
+    }
+  } else if (options.mode === "audit") {
+    const branch = git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    violations.push(...validateRefName(`refs/heads/${branch}`));
+    violations.push(
+      ...inspectCommits(
+        [
+          {
+            sha: "working-config",
+            authorName: readConfig(root, "user.name")[0] ?? "",
+            authorEmail: readConfig(root, "user.email")[0] ?? "",
+            committerName: readConfig(root, "user.name")[0] ?? "",
+            committerEmail: readConfig(root, "user.email")[0] ?? "",
+            body: "",
+          },
+        ],
+        owner,
+      ),
+    );
+    violations.push(...scanCandidateTree(root, { buildOutputPaths }));
+    if (options.requireCaller) {
+      violations.push(...validatePolicyCaller(root));
+    }
   } else {
-    throw new Error("--mode must be pre-push or ci");
+    throw new Error("--mode must be audit, pre-push, or ci");
   }
 
   if (violations.length > 0) {
@@ -390,4 +442,3 @@ if (isDirectExecution) {
     process.exitCode = 2;
   }
 }
-
