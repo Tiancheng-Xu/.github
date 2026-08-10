@@ -529,7 +529,7 @@ function remoteCommitTips(root, remoteLocation) {
   const tips = [];
   for (const [oid] of rows) {
     try {
-      tips.push(git(root, ["rev-parse", "--verify", `${oid}^{commit}`]));
+      tips.push(git(root, ["rev-parse", "--verify", `${oid}^{commit}`]).trim());
     } catch {
       // Non-commit tag targets do not provide a commit baseline.
     }

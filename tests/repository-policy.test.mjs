@@ -265,6 +265,21 @@ test("pre-push hook allows a compliant owner tree", () => {
   assert.match(result.stdout + result.stderr, /Repository policy passed/);
 });
 
+test("pre-push hook allows a compliant new branch on a non-empty remote", () => {
+  const { cwd } = createPushFixture();
+  git(cwd, "push", "-u", "origin", "HEAD");
+  git(cwd, "switch", "-c", "safe-feature");
+  writeFileSync(join(cwd, "README.md"), "safe feature\n");
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "safe feature");
+
+  const result = spawnSync("git", ["push", "origin", "HEAD"], {
+    cwd,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test("pre-push hook blocks configured public wording", () => {
   const { cwd } = createPushFixture();
   git(cwd, "push", "-u", "origin", "HEAD");
