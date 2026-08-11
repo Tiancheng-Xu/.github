@@ -148,6 +148,39 @@ test("accepts a product branch and rejects automation or retired aliases", () =>
   assert.ok(validateRefName(`refs/heads/${productOnlyPhrase}`).length > 0);
 });
 
+test("rejects retired branch tokens at exact ref boundaries", () => {
+  for (const refName of [
+    "refs/heads/feature/homework",
+    "refs/heads/feature.yideng",
+    "refs/heads/feature_yd",
+    "refs/heads/yd-feature",
+    "refs/heads/Feature/YD",
+  ]) {
+    assert.ok(
+      validateRefName(refName).some((item) => item.code === "unsafe-ref-name"),
+      refName,
+    );
+  }
+});
+
+test("allows refs that only contain yd as part of a larger token", () => {
+  for (const refName of [
+    "refs/heads/feature/mydata",
+    "refs/heads/feature/typed-api",
+    "refs/heads/feature/hydration",
+  ]) {
+    assert.deepEqual(validateRefName(refName), [], refName);
+  }
+});
+
+test("keeps the yd branch token out of tracked content scanning", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "README.md"), "yd is a protocol label\n");
+  git(cwd, "add", "README.md");
+
+  assert.deepEqual(scanCandidateTree(cwd), []);
+});
+
 test("scans the full tracked tree and reports configured public wording", () => {
   const cwd = createRepository();
   writeFileSync(join(cwd, "legacy.md"), `public ${productOnlyPhrase}\n`);
@@ -168,6 +201,7 @@ test("allows required Evidence, architecture, and verification material in the t
   const cwd = createRepository();
   const allowedFiles = [
     "docs/architecture/system.mmd",
+    "docs/delivery/implementation-map.md",
     "docs/evidence/deployment/proof.md",
     "docs/homework/implementation-map.md",
     "docs/qa/network.md",

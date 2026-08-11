@@ -37,6 +37,12 @@ export const DEFAULT_BLOCKED_TERMS = Object.freeze([
   String.fromCodePoint(0x79, 0x69, 0x64, 0x65, 0x6e, 0x67),
 ]);
 
+export const RETIRED_REF_TOKENS = Object.freeze([
+  String.fromCodePoint(0x68, 0x6f, 0x6d, 0x65, 0x77, 0x6f, 0x72, 0x6b),
+  String.fromCodePoint(0x79, 0x69, 0x64, 0x65, 0x6e, 0x67),
+  String.fromCodePoint(0x79, 0x64),
+]);
+
 const AUTOMATION_IDENTITIES = Object.freeze([
   "codex",
   "openai",
@@ -59,6 +65,7 @@ const LICENSE_FILE = /^(?:licen[cs]e|copying|notice)(?:\.[a-z0-9_-]+)?$/i;
 const ATTRIBUTION_LINE = /^[a-z][a-z0-9-]*-by:\s*.+$/i;
 const NON_PRODUCT_DOCUMENTATION_PREFIXES = Object.freeze([
   "docs/architecture/",
+  "docs/delivery/",
   "docs/evidence/",
   "docs/homework/",
   "docs/qa/",
@@ -356,7 +363,11 @@ export function scanCandidateTree(root, options = {}) {
 
 export function validateRefName(refName) {
   const candidate = normalized(refName);
-  const forbidden = [...AUTOMATION_IDENTITIES, ...DEFAULT_BLOCKED_TERMS];
+  const forbidden = [
+    ...AUTOMATION_IDENTITIES,
+    ...DEFAULT_BLOCKED_TERMS,
+    ...RETIRED_REF_TOKENS,
+  ];
   const violations = [];
   for (const identity of forbidden) {
     const escaped = identity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
