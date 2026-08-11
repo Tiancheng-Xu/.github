@@ -164,6 +164,73 @@ test("scans the full tracked tree and reports configured public wording", () => 
   assert.equal(violations[0].code, "blocked-public-content");
 });
 
+test("allows required Evidence, architecture, and verification material in the tracked tree", () => {
+  const cwd = createRepository();
+  const allowedFiles = [
+    "docs/architecture/system.mmd",
+    "docs/evidence/deployment/proof.md",
+    "docs/homework/implementation-map.md",
+    "docs/qa/network.md",
+    "docs/superpowers/plans/delivery.md",
+    "scripts/validate-homework-evidence.mjs",
+    "scripts/validate-homework-evidence.test.mjs",
+    "web/src/App.test.tsx",
+  ];
+  for (const path of allowedFiles) {
+    mkdirSync(dirname(join(cwd, path)), { recursive: true });
+    writeFileSync(join(cwd, path), `required evidence ${productOnlyPhrase}\n`);
+  }
+  git(cwd, "add", ...allowedFiles);
+
+  assert.deepEqual(
+    scanCandidateTree(cwd, {
+      blockedTerms: [productOnlyPhrase, retiredAlias],
+    }),
+    [],
+  );
+});
+
+test("still blocks configured wording in product source", () => {
+  const cwd = createRepository();
+  mkdirSync(join(cwd, "web", "src"), { recursive: true });
+  writeFileSync(
+    join(cwd, "web", "src", "App.tsx"),
+    `export const label = ${JSON.stringify(productOnlyPhrase)};\n`,
+  );
+  git(cwd, "add", "web/src/App.tsx");
+
+  const violations = scanCandidateTree(cwd, {
+    blockedTerms: [productOnlyPhrase, retiredAlias],
+  });
+  assert.ok(
+    violations.some(
+      (item) =>
+        item.path === "web/src/App.tsx" && item.scope === "tracked-tree",
+    ),
+  );
+});
+
+test("never applies the Evidence allowance to public build output", () => {
+  const cwd = createRepository();
+  mkdirSync(join(cwd, "dist", "docs", "evidence"), { recursive: true });
+  writeFileSync(
+    join(cwd, "dist", "docs", "evidence", "index.html"),
+    `public ${productOnlyPhrase}\n`,
+  );
+
+  const violations = scanCandidateTree(cwd, {
+    blockedTerms: [productOnlyPhrase, retiredAlias],
+    buildOutputPaths: ["dist"],
+  });
+  assert.ok(
+    violations.some(
+      (item) =>
+        item.path === "dist/docs/evidence/index.html" &&
+        item.scope === "build-output",
+    ),
+  );
+});
+
 test("scans configured build output even when it is not tracked", () => {
   const cwd = createRepository();
   mkdirSync(join(cwd, "dist"));

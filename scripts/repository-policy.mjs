@@ -57,6 +57,17 @@ const EXCLUDED_DIRECTORY_NAMES = new Set([
 
 const LICENSE_FILE = /^(?:licen[cs]e|copying|notice)(?:\.[a-z0-9_-]+)?$/i;
 const ATTRIBUTION_LINE = /^[a-z][a-z0-9-]*-by:\s*.+$/i;
+const NON_PRODUCT_DOCUMENTATION_PREFIXES = Object.freeze([
+  "docs/architecture/",
+  "docs/evidence/",
+  "docs/homework/",
+  "docs/qa/",
+  "docs/superpowers/plans/",
+  "docs/superpowers/specs/",
+]);
+const TEST_FILE = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/i;
+const VERIFICATION_SCRIPT =
+  /^scripts\/(?:validate|verify)-[a-z0-9-]+(?:\.(?:test|spec))?\.[cm]?[jt]s$/i;
 
 function git(root, args, options = {}) {
   return execFileSync("git", args, {
@@ -84,6 +95,17 @@ function isExcludedPath(path) {
   const parts = path.split(/[\\/]/);
   if (parts.some((part) => EXCLUDED_DIRECTORY_NAMES.has(part))) return true;
   return LICENSE_FILE.test(parts.at(-1) ?? "");
+}
+
+function isNonProductProjectMaterial(path) {
+  const projectPath = path.replaceAll("\\", "/");
+  return (
+    NON_PRODUCT_DOCUMENTATION_PREFIXES.some((prefix) =>
+      projectPath.startsWith(prefix),
+    ) ||
+    TEST_FILE.test(projectPath) ||
+    VERIFICATION_SCRIPT.test(projectPath)
+  );
 }
 
 function inspectBuffer(buffer, blockedTerms) {
@@ -266,7 +288,9 @@ export function scanCandidateTree(root, options = {}) {
   const revision = options.revision;
   const violations = contentViolations(
     repositoryRoot,
-    trackedPaths(repositoryRoot, revision),
+    trackedPaths(repositoryRoot, revision).filter(
+      (path) => !isNonProductProjectMaterial(path),
+    ),
     {
       blockedTerms,
       read: (path) => trackedBuffer(repositoryRoot, path, revision),
