@@ -35,6 +35,12 @@ Text-only records remain valid elsewhere in the case study, but they do not fill
 an image slot. Generated summaries must identify their machine-readable source
 and must not imitate a console screenshot.
 
+For a trained-model case, include at least one real representative dialogue
+when a usable result exists. The displayed answer must be unchanged, reviewed
+for accuracy and friendly wording, and labeled with the exact model, version,
+or baseline. Failed, evasive, or unreasonable answers belong in private
+evaluation or an explicitly labeled limitation; they are not success proof.
+
 ## Beginner-readable layer
 
 Preserve technical detail, then add a scanning layer that explains:
