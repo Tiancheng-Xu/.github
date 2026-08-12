@@ -36,6 +36,9 @@ export const DEFAULT_BLOCKED_TERMS = Object.freeze([
   String.fromCodePoint(0x4f5c, 0x4e1a),
   String.fromCodePoint(0x4e00, 0x706f),
   String.fromCodePoint(0x79, 0x69, 0x64, 0x65, 0x6e, 0x67),
+]);
+
+export const DEFAULT_PUBLIC_OUTPUT_ONLY_TERMS = Object.freeze([
   String.fromCodePoint(0x9762, 0x8bd5),
 ]);
 
@@ -338,6 +341,8 @@ export function scanCandidateTree(root, options = {}) {
   const repositoryRoot = resolve(root);
   const blockedTerms = options.blockedTerms ?? DEFAULT_BLOCKED_TERMS;
   const revision = options.revision;
+  const publicOutputOnlyTerms =
+    options.publicOutputOnlyTerms ?? DEFAULT_PUBLIC_OUTPUT_ONLY_TERMS;
   const candidatePaths = trackedPaths(repositoryRoot, revision);
   const violations = contentViolations(
     repositoryRoot,
@@ -397,7 +402,7 @@ export function scanCandidateTree(root, options = {}) {
         repositoryRoot,
         files.map((path) => relative(repositoryRoot, path).split(sep).join("/")),
         {
-          blockedTerms,
+          blockedTerms: [...blockedTerms, ...publicOutputOnlyTerms],
           read: (path) => readFileSync(resolve(repositoryRoot, path)),
           scope: "build-output",
         },

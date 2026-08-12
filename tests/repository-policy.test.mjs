@@ -245,7 +245,7 @@ test("still blocks configured wording in product source", () => {
   );
 });
 
-test("blocks recruiting-oriented framing in project pages by default", () => {
+test("allows recruiting terminology in private project source", () => {
   const cwd = createRepository();
   mkdirSync(join(cwd, "web", "src"), { recursive: true });
   writeFileSync(
@@ -254,12 +254,19 @@ test("blocks recruiting-oriented framing in project pages by default", () => {
   );
   git(cwd, "add", "web/src/App.tsx");
 
-  const violations = scanCandidateTree(cwd);
+  assert.deepEqual(scanCandidateTree(cwd), []);
+});
+
+test("blocks recruiting-oriented framing in public build output", () => {
+  const cwd = createRepository();
+  mkdirSync(join(cwd, "dist"), { recursive: true });
+  writeFileSync(join(cwd, "dist", "index.html"), projectFramingPhrase);
+
+  const violations = scanCandidateTree(cwd, { buildOutputPaths: ["dist"] });
   assert.ok(
     violations.some(
       (item) =>
-        item.path === "web/src/App.tsx" &&
-        item.code === "blocked-public-content",
+        item.path === "dist/index.html" && item.scope === "build-output",
     ),
   );
 });
