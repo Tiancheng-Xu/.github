@@ -21,6 +21,7 @@ const owner = {
 
 const productOnlyPhrase = String.fromCodePoint(0x4f5c, 0x4e1a);
 const retiredAlias = String.fromCodePoint(0x79, 0x69, 0x64, 0x65, 0x6e, 0x67);
+const projectFramingPhrase = String.fromCodePoint(0x9762, 0x8bd5);
 const policyHooksPath = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -244,6 +245,25 @@ test("still blocks configured wording in product source", () => {
   );
 });
 
+test("blocks recruiting-oriented framing in project pages by default", () => {
+  const cwd = createRepository();
+  mkdirSync(join(cwd, "web", "src"), { recursive: true });
+  writeFileSync(
+    join(cwd, "web", "src", "App.tsx"),
+    `export const label = ${JSON.stringify(projectFramingPhrase)};\n`,
+  );
+  git(cwd, "add", "web/src/App.tsx");
+
+  const violations = scanCandidateTree(cwd);
+  assert.ok(
+    violations.some(
+      (item) =>
+        item.path === "web/src/App.tsx" &&
+        item.code === "blocked-public-content",
+    ),
+  );
+});
+
 test("never applies the Evidence allowance to public build output", () => {
   const cwd = createRepository();
   mkdirSync(join(cwd, "dist", "docs", "evidence"), { recursive: true });
@@ -262,6 +282,49 @@ test("never applies the Evidence allowance to public build output", () => {
         item.path === "dist/docs/evidence/index.html" &&
         item.scope === "build-output",
     ),
+  );
+});
+
+test("rejects Evidence proof cards without a real hashed asset", () => {
+  const cwd = createRepository();
+  const caseDir = join(cwd, "public", "cases", "demo");
+  mkdirSync(join(caseDir, "assets"), { recursive: true });
+  writeFileSync(
+    join(caseDir, "evidence.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      slug: "demo",
+      proof: [{ id: "E01", title: "release", asset: null, lookFor: "status", proves: "deployed" }],
+      assets: [],
+    }),
+  );
+  git(cwd, "add", "public/cases/demo/evidence.json");
+
+  assert.ok(
+    scanCandidateTree(cwd).some((item) => item.code === "evidence-proof-asset-missing"),
+  );
+});
+
+test("accepts Evidence proof cards backed by matching bytes and SHA-256", () => {
+  const cwd = createRepository();
+  const caseDir = join(cwd, "public", "cases", "demo");
+  const asset = Buffer.from("real sanitized evidence\n");
+  mkdirSync(join(caseDir, "assets"), { recursive: true });
+  writeFileSync(join(caseDir, "assets", "release.png"), asset);
+  writeFileSync(
+    join(caseDir, "evidence.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      slug: "demo",
+      proof: [{ id: "E01", title: "release", asset: "release.png", lookFor: "status", proves: "deployed" }],
+      assets: [{ id: "E01", file: "release.png", bytes: asset.length, sha256: "ac7dc41e1b2568f5d6186d2bd9ce64ebb093f3c4ad3508c725ad8d7108b3a8f9" }],
+    }),
+  );
+  git(cwd, "add", "public/cases/demo");
+
+  assert.deepEqual(
+    scanCandidateTree(cwd).filter((item) => item.code.startsWith("evidence-")),
+    [],
   );
 });
 

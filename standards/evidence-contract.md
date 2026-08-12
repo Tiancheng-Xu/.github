@@ -29,6 +29,30 @@ Screenshots prove that work happened; diagrams explain how it works. Missing
 proof must be labeled missing or pending and must never be fabricated,
 duplicated, or replaced with a generic placeholder.
 
+For a completed visual proof matrix, every card must reference a real sanitized
+asset. The manifest entry, tracked file, byte count, and SHA-256 must agree.
+Text-only records remain valid elsewhere in the case study, but they do not fill
+an image slot. Generated summaries must identify their machine-readable source
+and must not imitate a console screenshot.
+
+## Beginner-readable layer
+
+Preserve technical detail, then add a scanning layer that explains:
+
+1. The goal in one plain-language paragraph.
+2. Why training is only one part of the product.
+3. What each headline metric means.
+4. The runtime request flow in numbered steps.
+5. Each incident in one sentence before symptom, cause, fix, and recheck.
+6. Where to look in every proof image and what it proves.
+
+This layer is a Feature QA requirement, not a brittle repository-wide keyword
+gate. Review it at 375, 390, 430, and 1440 px.
+
+Project and Evidence pages describe real products and engineering outcomes.
+They must not frame the implementation as recruiting collateral, an interview
+demo, or an interview replay.
+
 ## Repository boundary
 
 - Product code stays in its product repository.
@@ -36,4 +60,3 @@ duplicated, or replaced with a generic placeholder.
   Evidence repository.
 - Evidence publishing rejects credentials, local absolute paths, private data,
   model/data artifacts, and unapproved source material.
-

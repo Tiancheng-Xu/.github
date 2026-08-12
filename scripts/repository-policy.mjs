@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -35,6 +36,7 @@ export const DEFAULT_BLOCKED_TERMS = Object.freeze([
   String.fromCodePoint(0x4f5c, 0x4e1a),
   String.fromCodePoint(0x4e00, 0x706f),
   String.fromCodePoint(0x79, 0x69, 0x64, 0x65, 0x6e, 0x67),
+  String.fromCodePoint(0x9762, 0x8bd5),
 ]);
 
 export const RETIRED_REF_TOKENS = Object.freeze([
@@ -289,13 +291,57 @@ function contentViolations(root, paths, options) {
   return violations;
 }
 
+function evidenceManifestViolations(root, paths, revision) {
+  const violations = [];
+  const pathSet = new Set(paths);
+  const manifests = paths.filter((path) =>
+    /^public\/cases\/[^/]+\/evidence\.json$/.test(path),
+  );
+  for (const manifestPath of manifests) {
+    let manifest;
+    try {
+      manifest = JSON.parse(trackedBuffer(root, manifestPath, revision).toString("utf8"));
+    } catch {
+      violations.push({ code: "evidence-manifest-invalid", path: manifestPath });
+      continue;
+    }
+    if (manifest.schemaVersion !== 2 || !Array.isArray(manifest.proof) || !Array.isArray(manifest.assets)) {
+      continue;
+    }
+    const assetByFile = new Map(manifest.assets.map((asset) => [asset.file, asset]));
+    const caseRoot = manifestPath.slice(0, -"evidence.json".length);
+    for (const proof of manifest.proof) {
+      if (typeof proof.asset !== "string" || !proof.asset.trim()) {
+        violations.push({ code: "evidence-proof-asset-missing", path: manifestPath });
+        continue;
+      }
+      if (!proof.lookFor || !proof.proves) {
+        violations.push({ code: "evidence-proof-guide-missing", path: manifestPath });
+      }
+      const metadata = assetByFile.get(proof.asset);
+      const assetPath = `${caseRoot}assets/${proof.asset}`;
+      if (!metadata || !pathSet.has(assetPath)) {
+        violations.push({ code: "evidence-proof-asset-untracked", path: assetPath });
+        continue;
+      }
+      const content = trackedBuffer(root, assetPath, revision);
+      const hash = createHash("sha256").update(content).digest("hex");
+      if (metadata.bytes !== content.length || metadata.sha256 !== hash) {
+        violations.push({ code: "evidence-proof-integrity-mismatch", path: assetPath });
+      }
+    }
+  }
+  return violations;
+}
+
 export function scanCandidateTree(root, options = {}) {
   const repositoryRoot = resolve(root);
   const blockedTerms = options.blockedTerms ?? DEFAULT_BLOCKED_TERMS;
   const revision = options.revision;
+  const candidatePaths = trackedPaths(repositoryRoot, revision);
   const violations = contentViolations(
     repositoryRoot,
-    trackedPaths(repositoryRoot, revision).filter(
+    candidatePaths.filter(
       (path) => !isNonProductProjectMaterial(path),
     ),
     {
@@ -305,6 +351,7 @@ export function scanCandidateTree(root, options = {}) {
       scope: "tracked-tree",
     },
   );
+  violations.push(...evidenceManifestViolations(repositoryRoot, candidatePaths, revision));
 
   for (const outputPath of options.buildOutputPaths ?? []) {
     const absoluteOutput = resolve(repositoryRoot, outputPath);
