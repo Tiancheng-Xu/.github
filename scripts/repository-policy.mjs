@@ -455,10 +455,18 @@ function parseCommitLog(output) {
     .map((record) => record.trim())
     .filter(Boolean)
     .map((record) => {
-      const [sha, authorName, authorEmail, committerName, committerEmail, ...body] =
-        record.split("\u001f");
+      const [
+        sha,
+        parents,
+        authorName,
+        authorEmail,
+        committerName,
+        committerEmail,
+        ...body
+      ] = record.split("\u001f");
       return {
         sha,
+        parents: parents.trim() ? parents.trim().split(/\s+/) : [],
         authorName,
         authorEmail,
         committerName,
@@ -477,6 +485,16 @@ function inspectCommits(root, commits, owner) {
   }
 
   for (const commit of commits) {
+    const parentCount = commit.parents.length;
+    const githubNoreplyMatch = commit.authorEmail.match(
+      /^\d+\+([^@]+)@users\.noreply\.github\.com$/i,
+    );
+    const trustedGitHubMerge =
+      parentCount === 2 &&
+      normalized(commit.committerName) === "github" &&
+      normalized(commit.committerEmail) === "noreply@github.com" &&
+      githubNoreplyMatch !== null &&
+      normalized(githubNoreplyMatch[1]) === ownerName;
     const authorMatches =
       normalized(commit.authorName) === ownerName &&
       (ownerEmails.size === 0 || ownerEmails.has(normalized(commit.authorEmail)));
@@ -484,10 +502,10 @@ function inspectCommits(root, commits, owner) {
       normalized(commit.committerName) === ownerName &&
       (ownerEmails.size === 0 || ownerEmails.has(normalized(commit.committerEmail)));
 
-    if (!authorMatches) {
+    if (!authorMatches && !trustedGitHubMerge) {
       violations.push({ code: "author-owner-mismatch", sha: commit.sha });
     }
-    if (!committerMatches) {
+    if (!committerMatches && !trustedGitHubMerge) {
       violations.push({ code: "committer-owner-mismatch", sha: commit.sha });
     }
     if (
@@ -517,14 +535,14 @@ function inspectCommits(root, commits, owner) {
 }
 
 export function inspectCommitRange(root, range, owner) {
-  const format = "%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e";
+  const format = "%H%x1f%P%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e";
   const output = git(root, ["log", `--format=${format}`, range]);
   return inspectCommits(root, parseCommitLog(output), owner);
 }
 
 function inspectCommitList(root, revisions, owner) {
   if (revisions.length === 0) return [];
-  const format = "%H%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e";
+  const format = "%H%x1f%P%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e";
   const output = git(root, ["show", "-s", `--format=${format}`, ...revisions]);
   return inspectCommits(root, parseCommitLog(output), owner);
 }
@@ -720,6 +738,7 @@ export function runCli(argv = process.argv.slice(2)) {
         [
           {
             sha: "working-config",
+            parents: [],
             authorName: readConfig(root, "user.name")[0] ?? "",
             authorEmail: readConfig(root, "user.email")[0] ?? "",
             committerName: readConfig(root, "user.name")[0] ?? "",

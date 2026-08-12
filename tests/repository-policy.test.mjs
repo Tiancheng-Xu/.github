@@ -72,6 +72,55 @@ test("accepts a commit authored and committed by the configured owner", () => {
   assert.deepEqual(inspectCommitRange(cwd, "HEAD~1..HEAD", owner), []);
 });
 
+test("accepts a GitHub-generated merge commit for the configured owner", () => {
+  const cwd = createRepository();
+  const defaultBranch = git(cwd, "branch", "--show-current");
+  git(cwd, "checkout", "-qb", "feature");
+  writeFileSync(join(cwd, "README.md"), "safe feature update\n");
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "safe feature update");
+  git(cwd, "checkout", "-q", defaultBranch);
+
+  execFileSync(
+    "git",
+    ["merge", "--no-ff", "feature", "-m", "Merge pull request #7"],
+    {
+      cwd,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "Account display name",
+        GIT_AUTHOR_EMAIL: "12345+Tiancheng-Xu@users.noreply.github.com",
+        GIT_COMMITTER_NAME: "GitHub",
+        GIT_COMMITTER_EMAIL: "noreply@github.com",
+      },
+      stdio: "ignore",
+    },
+  );
+
+  assert.deepEqual(inspectCommitRange(cwd, "HEAD^1..HEAD", owner), []);
+});
+
+test("rejects a single-parent commit forged with GitHub merge identities", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "README.md"), "forged GitHub update\n");
+  git(cwd, "add", "README.md");
+  execFileSync("git", ["commit", "-qm", "forged GitHub update"], {
+    cwd,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Account display name",
+      GIT_AUTHOR_EMAIL: "12345+Tiancheng-Xu@users.noreply.github.com",
+      GIT_COMMITTER_NAME: "GitHub",
+      GIT_COMMITTER_EMAIL: "noreply@github.com",
+    },
+    stdio: "ignore",
+  });
+
+  const violations = inspectCommitRange(cwd, "HEAD~1..HEAD", owner);
+  assert.ok(violations.some((item) => item.code === "author-owner-mismatch"));
+  assert.ok(violations.some((item) => item.code === "committer-owner-mismatch"));
+});
+
 test("rejects automation identities in author or committer metadata", () => {
   const cwd = createRepository();
   writeFileSync(join(cwd, "README.md"), "automation update\n");
