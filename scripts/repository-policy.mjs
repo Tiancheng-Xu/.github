@@ -42,6 +42,70 @@ const EVIDENCE_MEANINGFUL_STEP_FIELDS = Object.freeze([
   "observed",
   "proof",
 ]);
+const PERFORMANCE_EVIDENCE_PATH = "docs/evidence/performance-observability.json";
+const PERFORMANCE_EVIDENCE_EXEMPT_REPOSITORIES = new Set([
+  "tiancheng-xu/personal-skills",
+  "tiancheng-xu/fullstack-showcase",
+]);
+const PERFORMANCE_EVIDENCE_PROFILES = new Set(["compact", "full"]);
+const PERFORMANCE_EVIDENCE_STATUSES = new Set([
+  "planned",
+  "implemented",
+  "verified",
+]);
+const PERFORMANCE_EVIDENCE_METRICS = Object.freeze([
+  "LCP",
+  "CLS",
+  "INP",
+  "FCP",
+  "TTFB",
+]);
+const PERFORMANCE_EVIDENCE_PERCENTILES = Object.freeze(["p50", "p75", "p95"]);
+const PERFORMANCE_EVIDENCE_DIMENSIONS = Object.freeze([
+  "sample_count",
+  "time_window",
+  "route",
+  "release",
+]);
+const PERFORMANCE_EVIDENCE_PIPELINE = Object.freeze([
+  "browser-sdk",
+  "api",
+  "sqs-dlq",
+  "ecs-cleaner",
+  "storage",
+  "dashboard",
+]);
+const PERFORMANCE_EVIDENCE_SAFETY = Object.freeze([
+  "schema-validation",
+  "pii-redaction",
+  "no-browser-aws-credentials",
+  "sdk-failure-isolation",
+]);
+const PERFORMANCE_EVIDENCE_PROOF_KINDS = Object.freeze([
+  "live-event",
+  "queue",
+  "ecs-cleaner",
+  "aggregate",
+  "dashboard",
+  "failure-retry",
+]);
+const FULL_PERFORMANCE_FILTERS = Object.freeze([
+  "time_window",
+  "environment",
+  "release",
+  "route",
+]);
+const FULL_PERFORMANCE_VIEWS = Object.freeze([
+  "trend",
+  "error_rate",
+  "route_comparison",
+  "slow_requests",
+]);
+const FULL_PERFORMANCE_RESILIENCE = Object.freeze([
+  "retry",
+  "dlq",
+  "idempotency",
+]);
 
 export const REPOSITORY_POLICY_CALLER = `name: Repository policy
 
@@ -116,6 +180,18 @@ function git(root, args, options = {}) {
 
 function normalized(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+export function normalizeRepositoryIdentifier(value) {
+  const candidate = String(value ?? "").trim().replace(/\/$/, "");
+  const githubMatch = candidate.match(
+    /github\.com(?::|\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i,
+  );
+  if (githubMatch) return normalized(`${githubMatch[1]}/${githubMatch[2]}`);
+  const repositoryMatch = candidate.match(/^([^/\s]+)\/([^/\s]+)$/);
+  return repositoryMatch
+    ? normalized(`${repositoryMatch[1]}/${repositoryMatch[2].replace(/\.git$/i, "")}`)
+    : "";
 }
 
 function isNullOid(value) {
@@ -454,6 +530,122 @@ function evidenceManifestViolations(root, paths, revision) {
   return violations;
 }
 
+function includesAll(values, required) {
+  if (!Array.isArray(values)) return false;
+  const candidates = new Set(values.map((value) => String(value)));
+  return required.every((value) => candidates.has(value));
+}
+
+function performanceEvidenceViolations(root, paths, revision, repositoryId) {
+  const violations = [];
+  const pathSet = new Set(paths);
+  const publishPath = ".github/baby2b-publish.yml";
+  if (!pathSet.has(publishPath)) return violations;
+
+  const normalizedRepository = normalizeRepositoryIdentifier(repositoryId);
+  if (PERFORMANCE_EVIDENCE_EXEMPT_REPOSITORIES.has(normalizedRepository)) {
+    return violations;
+  }
+
+  let publishManifest;
+  try {
+    publishManifest = trackedBuffer(root, publishPath, revision).toString("utf8");
+  } catch {
+    return violations;
+  }
+  if (!/^site-kind:\s*project\s*$/m.test(publishManifest)) return violations;
+
+  if (!pathSet.has(PERFORMANCE_EVIDENCE_PATH)) {
+    return [{ code: "performance-evidence-contract-missing", path: PERFORMANCE_EVIDENCE_PATH }];
+  }
+
+  let contract;
+  try {
+    contract = JSON.parse(
+      trackedBuffer(root, PERFORMANCE_EVIDENCE_PATH, revision).toString("utf8"),
+    );
+  } catch {
+    return [{ code: "performance-evidence-contract-invalid", path: PERFORMANCE_EVIDENCE_PATH }];
+  }
+
+  if (
+    contract.schemaVersion !== 1 ||
+    !PERFORMANCE_EVIDENCE_PROFILES.has(contract.profile) ||
+    !PERFORMANCE_EVIDENCE_STATUSES.has(contract.status)
+  ) {
+    violations.push({ code: "performance-evidence-contract-schema-invalid", path: PERFORMANCE_EVIDENCE_PATH });
+    return violations;
+  }
+  if (typeof contract.summary !== "string" || !contract.summary.trim()) {
+    violations.push({ code: "performance-evidence-summary-missing", path: PERFORMANCE_EVIDENCE_PATH });
+  }
+  if (!/^https:\/\//.test(String(contract.evidenceUrl ?? ""))) {
+    violations.push({ code: "performance-evidence-url-invalid", path: PERFORMANCE_EVIDENCE_PATH });
+  }
+  if (!Array.isArray(contract.limitations) || contract.limitations.length === 0) {
+    violations.push({ code: "performance-evidence-limitations-missing", path: PERFORMANCE_EVIDENCE_PATH });
+  }
+
+  if (contract.status === "planned") {
+    if (typeof contract.nextStep !== "string" || !contract.nextStep.trim()) {
+      violations.push({ code: "performance-evidence-next-step-missing", path: PERFORMANCE_EVIDENCE_PATH });
+    }
+    return violations;
+  }
+
+  if (!new Set(["live", "mixed"]).has(contract.dataMode)) {
+    violations.push({ code: "performance-evidence-live-data-required", path: PERFORMANCE_EVIDENCE_PATH });
+  }
+  for (const [field, required] of [
+    ["metrics", PERFORMANCE_EVIDENCE_METRICS],
+    ["percentiles", PERFORMANCE_EVIDENCE_PERCENTILES],
+    ["dimensions", PERFORMANCE_EVIDENCE_DIMENSIONS],
+    ["pipeline", PERFORMANCE_EVIDENCE_PIPELINE],
+    ["safety", PERFORMANCE_EVIDENCE_SAFETY],
+  ]) {
+    if (!includesAll(contract[field], required)) {
+      violations.push({
+        code: `performance-evidence-${field.replaceAll("_", "-")}-incomplete`,
+        path: PERFORMANCE_EVIDENCE_PATH,
+      });
+    }
+  }
+
+  const proofKinds = Array.isArray(contract.proof)
+    ? contract.proof
+        .filter(
+          (proof) =>
+            proof &&
+            typeof proof === "object" &&
+            typeof proof.kind === "string" &&
+            typeof proof.location === "string" &&
+            proof.location.trim() &&
+            typeof proof.proves === "string" &&
+            proof.proves.trim(),
+        )
+        .map((proof) => proof.kind)
+    : [];
+  if (!includesAll(proofKinds, PERFORMANCE_EVIDENCE_PROOF_KINDS)) {
+    violations.push({ code: "performance-evidence-live-proof-incomplete", path: PERFORMANCE_EVIDENCE_PATH });
+  }
+
+  if (contract.profile === "full") {
+    for (const [field, required] of [
+      ["filters", FULL_PERFORMANCE_FILTERS],
+      ["views", FULL_PERFORMANCE_VIEWS],
+      ["resilience", FULL_PERFORMANCE_RESILIENCE],
+    ]) {
+      if (!includesAll(contract[field], required)) {
+        violations.push({
+          code: `performance-evidence-full-${field}-incomplete`,
+          path: PERFORMANCE_EVIDENCE_PATH,
+        });
+      }
+    }
+  }
+  return violations;
+}
+
 export function scanCandidateTree(root, options = {}) {
   const repositoryRoot = resolve(root);
   const blockedTerms = options.blockedTerms ?? DEFAULT_BLOCKED_TERMS;
@@ -474,6 +666,14 @@ export function scanCandidateTree(root, options = {}) {
     },
   );
   violations.push(...evidenceManifestViolations(repositoryRoot, candidatePaths, revision));
+  violations.push(
+    ...performanceEvidenceViolations(
+      repositoryRoot,
+      candidatePaths,
+      revision,
+      options.repositoryId,
+    ),
+  );
 
   for (const outputPath of options.buildOutputPaths ?? []) {
     const absoluteOutput = resolve(repositoryRoot, outputPath);
@@ -688,6 +888,15 @@ function resolveOwner(root, options) {
   return { name, emails: [...new Set(emails)] };
 }
 
+function resolveRepositoryId(root, options) {
+  return normalizeRepositoryIdentifier(
+    options.repositoryId ??
+      process.env.GITHUB_REPOSITORY ??
+      options.remoteLocation ??
+      readConfig(root, "remote.origin.url")[0],
+  );
+}
+
 function parseArguments(argv) {
   const options = { ownerEmails: [], buildOutputPaths: [] };
   for (let index = 0; index < argv.length; index += 1) {
@@ -699,6 +908,7 @@ function parseArguments(argv) {
     else if (argument === "--revision") options.revision = value;
     else if (argument === "--remote-name") options.remoteName = value;
     else if (argument === "--remote-location") options.remoteLocation = value;
+    else if (argument === "--repository") options.repositoryId = value;
     else if (argument === "--owner-name") options.ownerName = value;
     else if (argument === "--owner-email") options.ownerEmails.push(value);
     else if (argument === "--build-output") options.buildOutputPaths.push(value);
@@ -801,6 +1011,7 @@ export function runCli(argv = process.argv.slice(2)) {
   const options = parseArguments(argv);
   const root = resolve(options.root ?? process.cwd());
   const owner = resolveOwner(root, options);
+  const repositoryId = resolveRepositoryId(root, options);
   const buildOutputPaths = [
     ...options.buildOutputPaths,
     ...(process.env.REPOSITORY_POLICY_BUILD_OUTPUTS ?? "")
@@ -831,6 +1042,7 @@ export function runCli(argv = process.argv.slice(2)) {
         ...scanCandidateTree(root, {
           revision: localSha,
           buildOutputPaths,
+          repositoryId,
         }),
       );
     }
@@ -842,7 +1054,7 @@ export function runCli(argv = process.argv.slice(2)) {
         ? inspectCommitRange(root, options.range, owner)
         : inspectCommitList(root, [revision], owner)),
     );
-    violations.push(...scanCandidateTree(root, { revision, buildOutputPaths }));
+    violations.push(...scanCandidateTree(root, { revision, buildOutputPaths, repositoryId }));
     if (options.requireCaller) {
       violations.push(...validatePolicyCaller(root, revision));
     }
@@ -866,7 +1078,7 @@ export function runCli(argv = process.argv.slice(2)) {
         owner,
       ),
     );
-    violations.push(...scanCandidateTree(root, { buildOutputPaths }));
+    violations.push(...scanCandidateTree(root, { buildOutputPaths, repositoryId }));
     for (const path of git(root, ["diff", "--name-only", "-z"])
       .split("\0")
       .filter(Boolean)) {

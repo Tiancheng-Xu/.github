@@ -100,6 +100,55 @@ function completeMeaningfulSteps() {
   ];
 }
 
+function writeProjectPublishManifest(cwd) {
+  const directory = join(cwd, ".github");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, "baby2b-publish.yml"),
+    "schema-version: 1\nslug: demo\nsite-kind: project\nevidence-url: https://evidence.baby2b.online/demo/\n",
+  );
+}
+
+function completePerformanceEvidence(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    profile: "compact",
+    status: "verified",
+    summary: "A bounded browser RUM pipeline with asynchronous cleaning and real dashboard readback.",
+    evidenceUrl: "https://evidence.baby2b.online/demo/",
+    dataMode: "live",
+    metrics: ["LCP", "CLS", "INP", "FCP", "TTFB"],
+    percentiles: ["p50", "p75", "p95"],
+    dimensions: ["sample_count", "time_window", "route", "release"],
+    pipeline: ["browser-sdk", "api", "sqs-dlq", "ecs-cleaner", "storage", "dashboard"],
+    safety: [
+      "schema-validation",
+      "pii-redaction",
+      "no-browser-aws-credentials",
+      "sdk-failure-isolation",
+    ],
+    proof: [
+      ["live-event", "E01"],
+      ["queue", "E02"],
+      ["ecs-cleaner", "E03"],
+      ["aggregate", "E04"],
+      ["dashboard", "E05"],
+      ["failure-retry", "E06"],
+    ].map(([kind, location]) => ({ kind, location, proves: `${kind} is verified.` })),
+    limitations: ["The controlled sample proves the chain, not long-term traffic scale."],
+    ...overrides,
+  };
+}
+
+function writePerformanceEvidence(cwd, contract) {
+  const directory = join(cwd, "docs", "evidence");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, "performance-observability.json"),
+    `${JSON.stringify(contract, null, 2)}\n`,
+  );
+}
+
 function createPushFixture() {
   const root = mkdtempSync(join(tmpdir(), "repository-policy-push-"));
   const remote = join(root, "remote.git");
@@ -509,6 +558,123 @@ test("accepts a complete Evidence architecture package with honest statuses", ()
     scanCandidateTree(cwd).filter((item) => item.code.startsWith("evidence-architecture")),
     [],
   );
+});
+
+test("requires a performance Evidence contract for published project repositories", () => {
+  const cwd = createRepository();
+  writeProjectPublishManifest(cwd);
+  git(cwd, "add", ".github/baby2b-publish.yml");
+
+  assert.ok(
+    scanCandidateTree(cwd, { repositoryId: "Tiancheng-Xu/real-project" }).some(
+      (item) => item.code === "performance-evidence-contract-missing",
+    ),
+  );
+});
+
+test("exempts learning notes and the showcase repository from performance Evidence", () => {
+  for (const repositoryId of [
+    "Tiancheng-Xu/personal-skills",
+    "https://github.com/Tiancheng-Xu/fullstack-showcase.git",
+  ]) {
+    const cwd = createRepository();
+    writeProjectPublishManifest(cwd);
+    git(cwd, "add", ".github/baby2b-publish.yml");
+    assert.deepEqual(
+      scanCandidateTree(cwd, { repositoryId }).filter((item) =>
+        item.code.startsWith("performance-evidence-"),
+      ),
+      [],
+    );
+  }
+});
+
+test("does not require project performance Evidence from an Evidence hub", () => {
+  const cwd = createRepository();
+  mkdirSync(join(cwd, ".github"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".github", "baby2b-publish.yml"),
+    "schema-version: 1\nslug: evidence\nsite-kind: evidence-hub\n",
+  );
+  git(cwd, "add", ".github/baby2b-publish.yml");
+
+  assert.deepEqual(
+    scanCandidateTree(cwd, { repositoryId: "Tiancheng-Xu/evidence-hub" }).filter(
+      (item) => item.code.startsWith("performance-evidence-"),
+    ),
+    [],
+  );
+});
+
+test("accepts an honest planned performance Evidence contract", () => {
+  const cwd = createRepository();
+  writeProjectPublishManifest(cwd);
+  writePerformanceEvidence(cwd, {
+    schemaVersion: 1,
+    profile: "compact",
+    status: "planned",
+    summary: "Performance observability is planned and is not presented as live evidence.",
+    evidenceUrl: "https://evidence.baby2b.online/demo/",
+    limitations: ["No live events have completed the cloud pipeline yet."],
+    nextStep: "Implement the bounded SDK and verify one controlled event batch end to end.",
+  });
+  git(cwd, "add", ".github/baby2b-publish.yml", "docs/evidence/performance-observability.json");
+
+  assert.deepEqual(
+    scanCandidateTree(cwd, { repositoryId: "Tiancheng-Xu/real-project" }).filter(
+      (item) => item.code.startsWith("performance-evidence-"),
+    ),
+    [],
+  );
+});
+
+test("rejects Mock-only or incomplete completed performance Evidence", () => {
+  const cwd = createRepository();
+  writeProjectPublishManifest(cwd);
+  writePerformanceEvidence(
+    cwd,
+    completePerformanceEvidence({
+      dataMode: "mock",
+      percentiles: ["p50", "p95"],
+      proof: [],
+    }),
+  );
+  git(cwd, "add", ".github/baby2b-publish.yml", "docs/evidence/performance-observability.json");
+
+  const codes = scanCandidateTree(cwd, {
+    repositoryId: "Tiancheng-Xu/real-project",
+  }).map((item) => item.code);
+  assert.ok(codes.includes("performance-evidence-live-data-required"));
+  assert.ok(codes.includes("performance-evidence-percentiles-incomplete"));
+  assert.ok(codes.includes("performance-evidence-live-proof-incomplete"));
+});
+
+test("accepts compact verified Evidence with the complete minimum chain", () => {
+  const cwd = createRepository();
+  writeProjectPublishManifest(cwd);
+  writePerformanceEvidence(cwd, completePerformanceEvidence());
+  git(cwd, "add", ".github/baby2b-publish.yml", "docs/evidence/performance-observability.json");
+
+  assert.deepEqual(
+    scanCandidateTree(cwd, { repositoryId: "Tiancheng-Xu/real-project" }).filter(
+      (item) => item.code.startsWith("performance-evidence-"),
+    ),
+    [],
+  );
+});
+
+test("requires advanced filters, views, and resilience only for full Evidence", () => {
+  const cwd = createRepository();
+  writeProjectPublishManifest(cwd);
+  writePerformanceEvidence(cwd, completePerformanceEvidence({ profile: "full" }));
+  git(cwd, "add", ".github/baby2b-publish.yml", "docs/evidence/performance-observability.json");
+
+  const codes = scanCandidateTree(cwd, {
+    repositoryId: "Tiancheng-Xu/real-project",
+  }).map((item) => item.code);
+  assert.ok(codes.includes("performance-evidence-full-filters-incomplete"));
+  assert.ok(codes.includes("performance-evidence-full-views-incomplete"));
+  assert.ok(codes.includes("performance-evidence-full-resilience-incomplete"));
 });
 
 test("rejects Evidence manifests with an unsupported schema instead of skipping them", () => {
