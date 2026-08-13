@@ -56,12 +56,21 @@ The machine-readable shape is documented in
 diagram may be Mermaid, SVG, PNG/WebP, HTML, or Markdown, but the Evidence page
 must render it legibly and keep it consistent with the implementation.
 
-Each meaningful setup step underneath the diagrams explains:
+Every manifest also declares a non-empty `meaningfulSteps` list. Each entry is
+machine-checked by both gates and explains:
 
-- its purpose and why the design was chosen;
-- the relevant file, service, resource, permission, or command;
-- the expected result and the main risk;
-- the observed result and a real proof reference.
+- `title`: the meaningful operation;
+- `purpose`: what it accomplishes;
+- `designReason`: why this design was chosen;
+- `scope`: the relevant file, service, resource, permission, or command;
+- `expected`: the expected result;
+- `risks`: the main risk or trust boundary;
+- `observed`: the result actually observed after execution;
+- `proof`: a real proof reference such as a proof ID, test, run, hash, URL, or
+  sanitized log record.
+
+Do not split routine typing, navigation, or retries into artificial steps. One
+entry should represent one reviewable engineering decision or operation.
 
 Remote-login troubleshooting, Evidence-generator internals, and unrelated
 debug noise are excluded unless they materially explain a product decision or

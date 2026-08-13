@@ -85,6 +85,21 @@ function completeArchitectureManifest() {
   };
 }
 
+function completeMeaningfulSteps() {
+  return [
+    {
+      title: "Deploy the verified release",
+      purpose: "Make the tested application reachable from its public entry point.",
+      designReason: "Use the existing shared foundation to reduce cost and duplicated infrastructure.",
+      scope: ".github/workflows/deploy.yml; Cloudflare Pages; AWS deployment role",
+      expected: "The release URL serves the verified commit without changing protected shared resources.",
+      risks: "A wrong environment or overly broad permission could publish the wrong revision.",
+      observed: "The deployment completed and the public health check returned the expected revision.",
+      proof: "E01 deployment run and sanitized health-check record.",
+    },
+  ];
+}
+
 function createPushFixture() {
   const root = mkdtempSync(join(tmpdir(), "repository-policy-push-"));
   const remote = join(root, "remote.git");
@@ -394,6 +409,7 @@ test("rejects Evidence proof cards without a real hashed asset", () => {
       proof: [{ id: "E01", title: "release", asset: null, lookFor: "status", proves: "deployed" }],
       assets: [],
       architecture: completeArchitectureManifest(),
+      meaningfulSteps: completeMeaningfulSteps(),
     }),
   );
   git(cwd, "add", "public/cases/demo");
@@ -418,6 +434,7 @@ test("accepts Evidence proof cards backed by matching bytes and SHA-256", () => 
       proof: [{ id: "E01", title: "release", asset: "release.png", lookFor: "status", proves: "deployed" }],
       assets: [{ id: "E01", file: "release.png", bytes: asset.length, sha256: "ac7dc41e1b2568f5d6186d2bd9ce64ebb093f3c4ad3508c725ad8d7108b3a8f9" }],
       architecture: completeArchitectureManifest(),
+      meaningfulSteps: completeMeaningfulSteps(),
     }),
   );
   git(cwd, "add", "public/cases/demo");
@@ -483,6 +500,7 @@ test("accepts a complete Evidence architecture package with honest statuses", ()
       proof: [],
       assets: [],
       architecture: completeArchitectureManifest(),
+      meaningfulSteps: completeMeaningfulSteps(),
     }),
   );
   git(cwd, "add", "public/cases/demo");
@@ -491,6 +509,65 @@ test("accepts a complete Evidence architecture package with honest statuses", ()
     scanCandidateTree(cwd).filter((item) => item.code.startsWith("evidence-architecture")),
     [],
   );
+});
+
+test("rejects Evidence manifests with an unsupported schema instead of skipping them", () => {
+  const cwd = createRepository();
+  const caseDir = join(cwd, "public", "cases", "demo");
+  mkdirSync(caseDir, { recursive: true });
+  writeFileSync(
+    join(caseDir, "evidence.json"),
+    JSON.stringify({ schemaVersion: 1, slug: "demo", proof: [], assets: [] }),
+  );
+  git(cwd, "add", "public/cases/demo/evidence.json");
+
+  assert.ok(
+    scanCandidateTree(cwd).some((item) => item.code === "evidence-manifest-schema-invalid"),
+  );
+});
+
+test("rejects Evidence cases without meaningful configuration steps", () => {
+  const cwd = createRepository();
+  const caseDir = join(cwd, "public", "cases", "demo");
+  createArchitectureSources(caseDir);
+  writeFileSync(
+    join(caseDir, "evidence.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      slug: "demo",
+      proof: [],
+      assets: [],
+      architecture: completeArchitectureManifest(),
+    }),
+  );
+  git(cwd, "add", "public/cases/demo");
+
+  assert.ok(
+    scanCandidateTree(cwd).some((item) => item.code === "evidence-meaningful-steps-missing"),
+  );
+});
+
+test("rejects incomplete meaningful configuration step explanations", () => {
+  const cwd = createRepository();
+  const caseDir = join(cwd, "public", "cases", "demo");
+  createArchitectureSources(caseDir);
+  const [step] = completeMeaningfulSteps();
+  writeFileSync(
+    join(caseDir, "evidence.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      slug: "demo",
+      proof: [],
+      assets: [],
+      architecture: completeArchitectureManifest(),
+      meaningfulSteps: [{ ...step, risks: "", proof: "" }],
+    }),
+  );
+  git(cwd, "add", "public/cases/demo");
+
+  const violations = scanCandidateTree(cwd);
+  assert.ok(violations.some((item) => item.code === "evidence-meaningful-step-field-missing" && item.field === "risks"));
+  assert.ok(violations.some((item) => item.code === "evidence-meaningful-step-field-missing" && item.field === "proof"));
 });
 
 test("scans configured build output even when it is not tracked", () => {

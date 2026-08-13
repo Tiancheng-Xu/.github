@@ -32,6 +32,16 @@ const EVIDENCE_ARCHITECTURE_STATUSES = new Set([
   "not_applicable",
   "unverified",
 ]);
+const EVIDENCE_MEANINGFUL_STEP_FIELDS = Object.freeze([
+  "title",
+  "purpose",
+  "designReason",
+  "scope",
+  "expected",
+  "risks",
+  "observed",
+  "proof",
+]);
 
 export const REPOSITORY_POLICY_CALLER = `name: Repository policy
 
@@ -323,6 +333,7 @@ function evidenceManifestViolations(root, paths, revision) {
       continue;
     }
     if (manifest.schemaVersion !== 2 || !Array.isArray(manifest.proof) || !Array.isArray(manifest.assets)) {
+      violations.push({ code: "evidence-manifest-schema-invalid", path: manifestPath });
       continue;
     }
     const assetByFile = new Map(manifest.assets.map((asset) => [asset.file, asset]));
@@ -394,6 +405,30 @@ function evidenceManifestViolations(root, paths, revision) {
           });
         }
       }
+    }
+    if (!Array.isArray(manifest.meaningfulSteps) || manifest.meaningfulSteps.length === 0) {
+      violations.push({ code: "evidence-meaningful-steps-missing", path: manifestPath });
+    } else {
+      manifest.meaningfulSteps.forEach((step, index) => {
+        if (!step || typeof step !== "object" || Array.isArray(step)) {
+          violations.push({
+            code: "evidence-meaningful-step-invalid",
+            path: manifestPath,
+            index,
+          });
+          return;
+        }
+        for (const field of EVIDENCE_MEANINGFUL_STEP_FIELDS) {
+          if (typeof step[field] !== "string" || !step[field].trim()) {
+            violations.push({
+              code: "evidence-meaningful-step-field-missing",
+              path: manifestPath,
+              index,
+              field,
+            });
+          }
+        }
+      });
     }
     for (const proof of manifest.proof) {
       if (typeof proof.asset !== "string" || !proof.asset.trim()) {
