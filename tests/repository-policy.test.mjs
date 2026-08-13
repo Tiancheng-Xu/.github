@@ -45,6 +45,46 @@ function createRepository() {
   return cwd;
 }
 
+function createArchitectureSources(caseDir) {
+  const architectureDir = join(caseDir, "architecture");
+  mkdirSync(architectureDir, { recursive: true });
+  for (const name of ["runtime", "github-actions", "preview", "sequence"]) {
+    writeFileSync(
+      join(architectureDir, `${name}.mmd`),
+      `flowchart LR\n  start[${name}] --> finish[verified]\n`,
+    );
+  }
+}
+
+function completeArchitectureManifest() {
+  return {
+    runtime: {
+      status: "implemented",
+      source: "architecture/runtime.mmd",
+      description: "Runtime request, data, trust, observability, and failure paths.",
+    },
+    githubActions: {
+      status: "implemented",
+      source: "architecture/github-actions.mmd",
+      description: "GitHub Actions build, verification, deployment, and permissions.",
+    },
+    preview: {
+      status: "implemented",
+      source: "architecture/preview.mmd",
+      description: "Preview creation, isolation, verification, and cleanup lifecycle.",
+    },
+    sequence: {
+      status: "implemented",
+      source: "architecture/sequence.mmd",
+      description: "Critical interaction sequence with success and failure outcomes.",
+    },
+    canary: {
+      status: "not_applicable",
+      note: "This static project has no independently deployable runtime revision.",
+    },
+  };
+}
+
 function createPushFixture() {
   const root = mkdtempSync(join(tmpdir(), "repository-policy-push-"));
   const remote = join(root, "remote.git");
@@ -345,6 +385,7 @@ test("rejects Evidence proof cards without a real hashed asset", () => {
   const cwd = createRepository();
   const caseDir = join(cwd, "public", "cases", "demo");
   mkdirSync(join(caseDir, "assets"), { recursive: true });
+  createArchitectureSources(caseDir);
   writeFileSync(
     join(caseDir, "evidence.json"),
     JSON.stringify({
@@ -352,9 +393,10 @@ test("rejects Evidence proof cards without a real hashed asset", () => {
       slug: "demo",
       proof: [{ id: "E01", title: "release", asset: null, lookFor: "status", proves: "deployed" }],
       assets: [],
+      architecture: completeArchitectureManifest(),
     }),
   );
-  git(cwd, "add", "public/cases/demo/evidence.json");
+  git(cwd, "add", "public/cases/demo");
 
   assert.ok(
     scanCandidateTree(cwd).some((item) => item.code === "evidence-proof-asset-missing"),
@@ -366,6 +408,7 @@ test("accepts Evidence proof cards backed by matching bytes and SHA-256", () => 
   const caseDir = join(cwd, "public", "cases", "demo");
   const asset = Buffer.from("real sanitized evidence\n");
   mkdirSync(join(caseDir, "assets"), { recursive: true });
+  createArchitectureSources(caseDir);
   writeFileSync(join(caseDir, "assets", "release.png"), asset);
   writeFileSync(
     join(caseDir, "evidence.json"),
@@ -374,12 +417,78 @@ test("accepts Evidence proof cards backed by matching bytes and SHA-256", () => 
       slug: "demo",
       proof: [{ id: "E01", title: "release", asset: "release.png", lookFor: "status", proves: "deployed" }],
       assets: [{ id: "E01", file: "release.png", bytes: asset.length, sha256: "ac7dc41e1b2568f5d6186d2bd9ce64ebb093f3c4ad3508c725ad8d7108b3a8f9" }],
+      architecture: completeArchitectureManifest(),
     }),
   );
   git(cwd, "add", "public/cases/demo");
 
   assert.deepEqual(
     scanCandidateTree(cwd).filter((item) => item.code.startsWith("evidence-")),
+    [],
+  );
+});
+
+test("rejects Evidence cases without the required architecture diagram package", () => {
+  const cwd = createRepository();
+  const caseDir = join(cwd, "public", "cases", "demo");
+  mkdirSync(caseDir, { recursive: true });
+  writeFileSync(
+    join(caseDir, "evidence.json"),
+    JSON.stringify({ schemaVersion: 2, slug: "demo", proof: [], assets: [] }),
+  );
+  git(cwd, "add", "public/cases/demo/evidence.json");
+
+  assert.ok(
+    scanCandidateTree(cwd).some((item) => item.code === "evidence-architecture-missing"),
+  );
+});
+
+test("rejects dishonest or untraceable Evidence architecture entries", () => {
+  const cwd = createRepository();
+  const caseDir = join(cwd, "public", "cases", "demo");
+  mkdirSync(caseDir, { recursive: true });
+  writeFileSync(
+    join(caseDir, "evidence.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      slug: "demo",
+      proof: [],
+      assets: [],
+      architecture: {
+        runtime: { status: "implemented", source: "../../README.md", description: "unsafe" },
+        githubActions: { status: "planned" },
+        preview: { status: "unavailable", note: "Account quota blocks preview resources." },
+        sequence: { status: "implemented", source: "architecture/missing.mmd", description: "missing" },
+        canary: { status: "not_applicable", note: "No versioned backend." },
+      },
+    }),
+  );
+  git(cwd, "add", "public/cases/demo/evidence.json");
+
+  const violations = scanCandidateTree(cwd);
+  assert.ok(violations.some((item) => item.code === "evidence-architecture-source-unsafe"));
+  assert.ok(violations.some((item) => item.code === "evidence-architecture-note-missing"));
+  assert.ok(violations.some((item) => item.code === "evidence-architecture-source-untracked"));
+});
+
+test("accepts a complete Evidence architecture package with honest statuses", () => {
+  const cwd = createRepository();
+  const caseDir = join(cwd, "public", "cases", "demo");
+  createArchitectureSources(caseDir);
+  writeFileSync(
+    join(caseDir, "evidence.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      slug: "demo",
+      proof: [],
+      assets: [],
+      architecture: completeArchitectureManifest(),
+    }),
+  );
+  git(cwd, "add", "public/cases/demo");
+
+  assert.deepEqual(
+    scanCandidateTree(cwd).filter((item) => item.code.startsWith("evidence-architecture")),
     [],
   );
 });

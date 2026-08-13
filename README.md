@@ -51,3 +51,4 @@ are documented in [branch naming policy](docs/delivery/branch-naming-policy.md).
 
 - [Project delivery](standards/project-delivery.md)
 - [Portfolio and Evidence](standards/evidence-contract.md)
+- [Evidence manifest example](standards/evidence-manifest.example.json)

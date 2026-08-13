@@ -18,6 +18,20 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAX_IN_MEMORY_BLOB = 32 * 1024 * 1024;
+const EVIDENCE_ARCHITECTURE_SECTIONS = Object.freeze([
+  "runtime",
+  "githubActions",
+  "preview",
+  "sequence",
+  "canary",
+]);
+const EVIDENCE_ARCHITECTURE_STATUSES = new Set([
+  "implemented",
+  "planned",
+  "unavailable",
+  "not_applicable",
+  "unverified",
+]);
 
 export const REPOSITORY_POLICY_CALLER = `name: Repository policy
 
@@ -313,6 +327,74 @@ function evidenceManifestViolations(root, paths, revision) {
     }
     const assetByFile = new Map(manifest.assets.map((asset) => [asset.file, asset]));
     const caseRoot = manifestPath.slice(0, -"evidence.json".length);
+    const architecture = manifest.architecture;
+    if (!architecture || typeof architecture !== "object" || Array.isArray(architecture)) {
+      violations.push({ code: "evidence-architecture-missing", path: manifestPath });
+    } else {
+      for (const section of EVIDENCE_ARCHITECTURE_SECTIONS) {
+        const entry = architecture[section];
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+          violations.push({
+            code: "evidence-architecture-section-missing",
+            path: manifestPath,
+            section,
+          });
+          continue;
+        }
+        if (!EVIDENCE_ARCHITECTURE_STATUSES.has(entry.status)) {
+          violations.push({
+            code: "evidence-architecture-status-invalid",
+            path: manifestPath,
+            section,
+          });
+          continue;
+        }
+        if (section === "runtime" && entry.status !== "implemented") {
+          violations.push({
+            code: "evidence-runtime-architecture-required",
+            path: manifestPath,
+            section,
+          });
+        }
+        if (entry.status === "implemented") {
+          if (typeof entry.description !== "string" || !entry.description.trim()) {
+            violations.push({
+              code: "evidence-architecture-description-missing",
+              path: manifestPath,
+              section,
+            });
+          }
+          const source = typeof entry.source === "string" ? entry.source.trim() : "";
+          const unsafeSource =
+            !source ||
+            source.startsWith("/") ||
+            source.includes("\\") ||
+            source.split("/").some((segment) => !segment || segment === "." || segment === "..");
+          if (unsafeSource) {
+            violations.push({
+              code: "evidence-architecture-source-unsafe",
+              path: manifestPath,
+              section,
+            });
+          } else {
+            const sourcePath = `${caseRoot}${source}`;
+            if (!pathSet.has(sourcePath)) {
+              violations.push({
+                code: "evidence-architecture-source-untracked",
+                path: sourcePath,
+                section,
+              });
+            }
+          }
+        } else if (typeof entry.note !== "string" || !entry.note.trim()) {
+          violations.push({
+            code: "evidence-architecture-note-missing",
+            path: manifestPath,
+            section,
+          });
+        }
+      }
+    }
     for (const proof of manifest.proof) {
       if (typeof proof.asset !== "string" || !proof.asset.trim()) {
         violations.push({ code: "evidence-proof-asset-missing", path: manifestPath });
