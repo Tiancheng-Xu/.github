@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -245,6 +245,48 @@ test("scans the full tracked tree and reports configured public wording", () => 
     ["legacy.md"],
   );
   assert.equal(violations[0].code, "blocked-public-content");
+});
+
+test("does not apply public product wording rules to configured private learning notes", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "learning-notes.md"), `private ${productOnlyPhrase}\n`);
+  git(cwd, "add", "learning-notes.md");
+
+  const violations = scanCandidateTree(cwd, {
+    repositoryVisibility: "private",
+    contentPolicy: "private-learning-notes",
+  });
+
+  assert.deepEqual(
+    violations.filter((item) => item.code === "blocked-public-content"),
+    [],
+  );
+});
+
+test("still applies product wording rules to an unconfigured private repository", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "README.md"), `private ${productOnlyPhrase}\n`);
+  git(cwd, "add", "README.md");
+
+  assert.ok(
+    scanCandidateTree(cwd, { repositoryVisibility: "private" }).some(
+      (item) => item.code === "blocked-public-content",
+    ),
+  );
+});
+
+test("skips gitlinks whose target object is not stored in the superproject", () => {
+  const cwd = createRepository();
+  git(
+    cwd,
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    `160000,${"a".repeat(40)},nested-project`,
+  );
+  git(cwd, "commit", "-qm", "add nested project gitlink");
+
+  assert.deepEqual(scanCandidateTree(cwd, { revision: "HEAD" }), []);
 });
 
 test("allows required Evidence, architecture, and verification material in the tracked tree", () => {
@@ -515,6 +557,28 @@ test("pre-push hook blocks configured public wording", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /blocked-public-content/);
   assert.doesNotMatch(result.stderr, new RegExp(productOnlyPhrase));
+});
+
+test("pre-push hook permits private repository source wording", () => {
+  const { cwd } = createPushFixture();
+  git(cwd, "config", "workflow.contentPolicy", "private-learning-notes");
+  writeFileSync(join(cwd, "README.md"), `private ${productOnlyPhrase}\n`);
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "private learning notes");
+
+  const fakeBin = mkdtempSync(join(tmpdir(), "repository-policy-bin-"));
+  const gh = join(fakeBin, "gh");
+  writeFileSync(gh, "#!/bin/sh\nprintf 'PRIVATE\\n'\n");
+  chmodSync(gh, 0o755);
+
+  const result = spawnSync("git", ["push", "-u", "origin", "HEAD"], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout + result.stderr, /Repository policy passed/);
 });
 
 test("pre-push hook validates the actual remote destination ref", () => {
