@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "slug": "project-slug",
+  "proof": [],
+  "assets": [],
+  "architecture": {
+    "runtime": {
+      "status": "implemented",
+      "source": "architecture/runtime.mmd",
+      "description": "完整运行请求、数据、依赖、权限、网络、可观测性和失败路径。"
+    },
+    "githubActions": {
+      "status": "implemented",
+      "source": "architecture/github-actions.mmd",
+      "description": "GitHub Actions 构建、验证、OIDC 权限、部署和失败处理。"
+    },
+    "preview": {
+      "status": "planned",
+      "note": "PR 预览尚未部署；计划按 preview_id 隔离并在关闭 PR 后只清理临时资源。"
+    },
+    "sequence": {
+      "status": "implemented",
+      "source": "architecture/sequence.mmd",
+      "description": "关键交互的成功、重试和失败时序。"
+    },
+    "canary": {
+      "status": "not_applicable",
+      "note": "当前项目没有可独立切流的后端版本，因此不声明已实现灰度发布。"
+    }
+  }
+}

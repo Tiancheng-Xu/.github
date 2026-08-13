@@ -25,6 +25,48 @@ different visual theme.
 8. Privacy, security, known limitations, and pending work.
 9. Reproduction, source, project, Evidence, and portfolio links when available.
 
+## Required architecture package
+
+Every `public/cases/<slug>/evidence.json` declares these five architecture
+views. They are enforced by both the account-wide CI check and local pre-push
+gate:
+
+1. `runtime`: the complete runtime request and data flow. This view is always
+   `implemented` and points to a tracked, legible source file inside the case.
+   It covers responsibilities, storage, external dependencies, network and
+   trust boundaries, permissions, observability, failure paths, and cleanup
+   ownership where applicable.
+2. `githubActions`: build, test, identity/OIDC, deployment, environment
+   protection, Evidence capture, and rollback or failure handling.
+3. `preview`: PR preview creation, isolation key, routing, verification,
+   expiration, and project-scoped cleanup without deleting shared resources.
+4. `sequence`: the critical interaction in time order, including the success
+   response and important retry, rejection, or failure outcome.
+5. `canary`: revision split, health signal, promotion, alarm, and rollback when
+   gray release exists.
+
+An implemented view requires `status: "implemented"`, a case-relative tracked
+`source`, and a plain-language `description`. A capability that is not yet
+real must use one of `planned`, `unavailable`, `not_applicable`, or `unverified`
+and include a concrete `note`. Planned or unavailable services must never be
+drawn as deployed resources.
+
+The machine-readable shape is documented in
+[`evidence-manifest.example.json`](./evidence-manifest.example.json). The
+diagram may be Mermaid, SVG, PNG/WebP, HTML, or Markdown, but the Evidence page
+must render it legibly and keep it consistent with the implementation.
+
+Each meaningful setup step underneath the diagrams explains:
+
+- its purpose and why the design was chosen;
+- the relevant file, service, resource, permission, or command;
+- the expected result and the main risk;
+- the observed result and a real proof reference.
+
+Remote-login troubleshooting, Evidence-generator internals, and unrelated
+debug noise are excluded unless they materially explain a product decision or
+verified incident.
+
 Screenshots prove that work happened; diagrams explain how it works. Missing
 proof must be labeled missing or pending and must never be fabricated,
 duplicated, or replaced with a generic placeholder.
