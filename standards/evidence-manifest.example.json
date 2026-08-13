@@ -27,5 +27,17 @@
       "status": "not_applicable",
       "note": "当前项目没有可独立切流的后端版本，因此不声明已实现灰度发布。"
     }
-  }
+  },
+  "meaningfulSteps": [
+    {
+      "title": "部署已验证版本",
+      "purpose": "让通过测试的应用可从正式入口访问。",
+      "designReason": "复用受保护的共享基础设施，减少费用和重复资源。",
+      "scope": ".github/workflows/deploy.yml；Cloudflare Pages；AWS 项目部署角色",
+      "expected": "发布地址运行目标提交，且不修改受保护的共享资源。",
+      "risks": "环境选择或权限范围错误可能发布错误版本。",
+      "observed": "部署成功，公开健康检查返回目标版本。",
+      "proof": "E01 部署运行记录与脱敏健康检查结果。"
+    }
+  ]
 }
