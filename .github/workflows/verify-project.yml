@@ -51,6 +51,36 @@ on:
         required: false
         default: ""
         type: string
+      static-first-output:
+        description: Optional repository-relative production output for static-first verification.
+        required: false
+        default: ""
+        type: string
+      static-first-routes:
+        description: Comma-separated public routes that must have readable route HTML.
+        required: false
+        default: ""
+        type: string
+      static-first-mode:
+        description: Static-first delivery mode (ssg or edge-ssr).
+        required: false
+        default: ssg
+        type: string
+      static-first-rendering-manifest:
+        description: Required rendering contract for edge-ssr mode.
+        required: false
+        default: ""
+        type: string
+      static-first-server-artifact:
+        description: Required non-empty server bundle for edge-ssr mode.
+        required: false
+        default: ""
+        type: string
+      static-first-runtime-command:
+        description: Project command that verifies SSR markers, route matrix, 404, asset passthrough, hydration, fallback, and delivery-aware base paths.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -85,6 +115,40 @@ jobs:
         run: ${{ inputs['typecheck-command'] }}
       - name: Production build
         run: ${{ inputs['build-command'] }}
+      - name: Checkout static-first policy
+        if: inputs['static-first-output'] != ''
+        uses: actions/checkout@v4
+        with:
+          repository: Tiancheng-Xu/.github
+          path: .shared-static-first-policy
+          sparse-checkout: scripts/static-first-policy.mjs
+      - name: Static-first rendering gate
+        if: inputs['static-first-output'] != ''
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --root "${{ github.workspace }}"
+            --output "${{ inputs['static-first-output'] }}"
+            --routes "${{ inputs['static-first-routes'] }}"
+            --mode "${{ inputs['static-first-mode'] }}"
+          )
+          if [[ -n "${{ inputs['static-first-rendering-manifest'] }}" ]]; then
+            args+=(--rendering-manifest "${{ inputs['static-first-rendering-manifest'] }}")
+          fi
+          if [[ -n "${{ inputs['static-first-server-artifact'] }}" ]]; then
+            args+=(--server-artifact "${{ inputs['static-first-server-artifact'] }}")
+          fi
+          node .shared-static-first-policy/scripts/static-first-policy.mjs "${args[@]}"
+      - name: Require Edge SSR runtime matrix
+        if: inputs['static-first-mode'] == 'edge-ssr' && inputs['static-first-runtime-command'] == ''
+        run: |
+          echo "edge-ssr requires static-first-runtime-command against the built server artifact" >&2
+          exit 1
+      - name: Static-first runtime matrix
+        if: inputs['static-first-runtime-command'] != ''
+        run: ${{ inputs['static-first-runtime-command'] }}
       - name: Resolve introduced commit range
         id: commit-range
         shell: bash
