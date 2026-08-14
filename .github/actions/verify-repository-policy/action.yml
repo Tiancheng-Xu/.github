@@ -30,6 +30,7 @@ runs:
       env:
         REPOSITORY_POLICY_OWNER_NAME: ${{ inputs.owner-name }}
         REPOSITORY_POLICY_OWNER_EMAILS: ${{ inputs.owner-emails }}
+        REPOSITORY_POLICY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         POLICY_REVISION: ${{ inputs.revision }}
         POLICY_COMMIT_RANGE: ${{ inputs.commit-range }}
         POLICY_BUILD_OUTPUT_PATHS: ${{ inputs.build-output-paths }}
@@ -47,4 +48,3 @@ runs:
           done
         fi
         node "$policy_script" "${args[@]}"
-

@@ -155,6 +155,35 @@ test("accepts a GitHub-generated merge commit for the configured owner", () => {
   assert.deepEqual(inspectCommitRange(cwd, "HEAD^1..HEAD", owner), []);
 });
 
+test("accepts an owner squash commit attested by an owner GitHub push", () => {
+  const cwd = createRepository();
+  writeFileSync(join(cwd, "README.md"), "safe squashed update\n");
+  git(cwd, "add", "README.md");
+  execFileSync("git", ["commit", "-qm", "safe squashed update (#20)"], {
+    cwd,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Account display name",
+      GIT_AUTHOR_EMAIL: "44307608+Tiancheng-Xu@users.noreply.github.com",
+      GIT_COMMITTER_NAME: "GitHub",
+      GIT_COMMITTER_EMAIL: "noreply@github.com",
+    },
+    stdio: "ignore",
+  });
+  const sha = git(cwd, "rev-parse", "HEAD");
+
+  assert.deepEqual(
+    inspectCommitRange(cwd, "HEAD~1..HEAD", owner, {
+      GITHUB_ACTOR: "Tiancheng-Xu",
+      GITHUB_EVENT_NAME: "push",
+      GITHUB_REF: "refs/heads/main",
+      GITHUB_SHA: sha,
+      REPOSITORY_POLICY_DEFAULT_BRANCH: "main",
+    }),
+    [],
+  );
+});
+
 test("rejects a single-parent commit forged with GitHub merge identities", () => {
   const cwd = createRepository();
   writeFileSync(join(cwd, "README.md"), "forged GitHub update\n");
