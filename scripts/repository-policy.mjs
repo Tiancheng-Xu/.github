@@ -593,7 +593,7 @@ function parseCommitLog(output) {
     });
 }
 
-function inspectCommits(root, commits, owner) {
+function inspectCommits(root, commits, owner, context = process.env) {
   const violations = [];
   const ownerName = normalized(owner?.name);
   const ownerEmails = new Set((owner?.emails ?? []).map(normalized));
@@ -612,6 +612,20 @@ function inspectCommits(root, commits, owner) {
       normalized(commit.committerEmail) === "noreply@github.com" &&
       githubNoreplyMatch !== null &&
       normalized(githubNoreplyMatch[1]) === ownerName;
+    const trustedGitHubSquash =
+      parentCount === 1 &&
+      normalized(commit.committerName) === "github" &&
+      normalized(commit.committerEmail) === "noreply@github.com" &&
+      githubNoreplyMatch !== null &&
+      normalized(githubNoreplyMatch[1]) === ownerName &&
+      normalized(context.GITHUB_ACTOR) === ownerName &&
+      context.GITHUB_EVENT_NAME === "push" &&
+      context.GITHUB_SHA === commit.sha &&
+      context.GITHUB_REF ===
+        `refs/heads/${context.REPOSITORY_POLICY_DEFAULT_BRANCH}` &&
+      /\(#\d+\)\s*$/.test(commit.body.split("\n", 1)[0]);
+    const trustedGitHubPlatformCommit =
+      trustedGitHubMerge || trustedGitHubSquash;
     const authorMatches =
       normalized(commit.authorName) === ownerName &&
       (ownerEmails.size === 0 || ownerEmails.has(normalized(commit.authorEmail)));
@@ -619,10 +633,10 @@ function inspectCommits(root, commits, owner) {
       normalized(commit.committerName) === ownerName &&
       (ownerEmails.size === 0 || ownerEmails.has(normalized(commit.committerEmail)));
 
-    if (!authorMatches && !trustedGitHubMerge) {
+    if (!authorMatches && !trustedGitHubPlatformCommit) {
       violations.push({ code: "author-owner-mismatch", sha: commit.sha });
     }
-    if (!committerMatches && !trustedGitHubMerge) {
+    if (!committerMatches && !trustedGitHubPlatformCommit) {
       violations.push({ code: "committer-owner-mismatch", sha: commit.sha });
     }
     if (
@@ -651,10 +665,10 @@ function inspectCommits(root, commits, owner) {
   return violations;
 }
 
-export function inspectCommitRange(root, range, owner) {
+export function inspectCommitRange(root, range, owner, context = process.env) {
   const format = "%H%x1f%P%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e";
   const output = git(root, ["log", `--format=${format}`, range]);
-  return inspectCommits(root, parseCommitLog(output), owner);
+  return inspectCommits(root, parseCommitLog(output), owner, context);
 }
 
 function inspectCommitList(root, revisions, owner) {
