@@ -51,6 +51,18 @@ test("accepts a complete project publishing manifest", () => {
   assert.match(result.output, /^site-kind=project$/m);
 });
 
+test("accepts fullstack-showcase as the portfolio home at the site root", () => {
+  const result = runAction(
+    projectManifest
+      .replaceAll("personal-ai-agent", "fullstack-showcase")
+      .replace(
+        "https://fullstack-showcase.baby2b.online/",
+        "https://baby2b.online/",
+      ),
+  );
+  assert.equal(result.status, 0, result.stderr);
+});
+
 test("accepts an Evidence Hub manifest whose URLs share the hub root", () => {
   const result = runAction(`schema-version: 1
 slug: evidence
@@ -67,6 +79,14 @@ backup-url: ""
 });
 
 for (const [name, manifest, expected] of [
+  [
+    "rejects the site root for a non-portfolio project",
+    projectManifest.replace(
+      "https://personal-ai-agent.baby2b.online/",
+      "https://baby2b.online/",
+    ),
+    /production-url.*fullstack-showcase/i,
+  ],
   [
     "rejects pages.dev as a production URL",
     projectManifest.replace(
