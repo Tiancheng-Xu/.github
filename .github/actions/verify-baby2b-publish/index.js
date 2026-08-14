@@ -98,9 +98,13 @@ function validate(config) {
   );
 
   const production = parseHttpsUrl(config["production-url"], "production-url");
+  const isPortfolioHome =
+    config.slug === "fullstack-showcase" &&
+    production.hostname === "baby2b.online" &&
+    production.pathname === "/";
   assert(
-    production.hostname.endsWith(".baby2b.online"),
-    "production-url must use a baby2b.online subdomain",
+    production.hostname.endsWith(".baby2b.online") || isPortfolioHome,
+    "production-url must use a baby2b.online subdomain, except fullstack-showcase at the site root",
   );
   const evidence = parseHttpsUrl(config["evidence-url"], "evidence-url");
   assert(
