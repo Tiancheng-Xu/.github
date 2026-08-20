@@ -244,6 +244,21 @@ function trackedPaths(root, revision) {
   return git(root, args).split("\0").filter(Boolean);
 }
 
+function trackedGitlinks(root, revision) {
+  const args = revision
+    ? ["ls-tree", "-r", "-z", revision]
+    : ["ls-files", "-s", "-z"];
+  const entries = git(root, args).split("\0").filter(Boolean);
+  return new Set(
+    entries.flatMap((entry) => {
+      const separator = entry.indexOf("\t");
+      if (separator < 0) return [];
+      const metadata = entry.slice(0, separator).split(/\s+/);
+      return metadata[0] === "160000" ? [entry.slice(separator + 1)] : [];
+    }),
+  );
+}
+
 function trackedBuffer(root, path, revision) {
   if (revision) {
     return git(root, ["show", `${revision}:${path}`], { encoding: "buffer" });
@@ -457,17 +472,23 @@ function evidenceManifestViolations(root, paths, revision) {
 export function scanCandidateTree(root, options = {}) {
   const repositoryRoot = resolve(root);
   const blockedTerms = options.blockedTerms ?? DEFAULT_BLOCKED_TERMS;
+  const privateLearningNotes =
+    normalized(options.repositoryVisibility) === "private" &&
+    normalized(options.contentPolicy) === "private-learning-notes";
+  const trackedBlockedTerms =
+    privateLearningNotes ? [] : blockedTerms;
   const revision = options.revision;
   const publicOutputOnlyTerms =
     options.publicOutputOnlyTerms ?? DEFAULT_PUBLIC_OUTPUT_ONLY_TERMS;
   const candidatePaths = trackedPaths(repositoryRoot, revision);
+  const gitlinks = trackedGitlinks(repositoryRoot, revision);
   const violations = contentViolations(
     repositoryRoot,
     candidatePaths.filter(
-      (path) => !isNonProductProjectMaterial(path),
+      (path) => !gitlinks.has(path) && !isNonProductProjectMaterial(path),
     ),
     {
-      blockedTerms,
+      blockedTerms: trackedBlockedTerms,
       read: (path) => trackedBuffer(repositoryRoot, path, revision),
       isBinary: (path) => trackedBlobIsBinary(repositoryRoot, path, revision),
       scope: "tracked-tree",
@@ -713,6 +734,8 @@ function parseArguments(argv) {
     else if (argument === "--revision") options.revision = value;
     else if (argument === "--remote-name") options.remoteName = value;
     else if (argument === "--remote-location") options.remoteLocation = value;
+    else if (argument === "--repository-visibility") options.repositoryVisibility = value;
+    else if (argument === "--content-policy") options.contentPolicy = value;
     else if (argument === "--owner-name") options.ownerName = value;
     else if (argument === "--owner-email") options.ownerEmails.push(value);
     else if (argument === "--build-output") options.buildOutputPaths.push(value);
@@ -724,6 +747,17 @@ function parseArguments(argv) {
     index += 1;
   }
   return options;
+}
+
+function remoteRepositoryVisibility(remoteLocation) {
+  if (!remoteLocation) return "public";
+  const lookup = spawnSync(
+    "gh",
+    ["repo", "view", remoteLocation, "--json", "visibility", "--jq", ".visibility"],
+    { encoding: "utf8" },
+  );
+  if (lookup.status !== 0) return "public";
+  return normalized(lookup.stdout) === "private" ? "private" : "public";
 }
 
 function hasObject(root, revision) {
@@ -822,6 +856,13 @@ export function runCli(argv = process.argv.slice(2)) {
       .filter(Boolean),
   ];
   const violations = [];
+  const repositoryVisibility =
+    options.repositoryVisibility ??
+    (options.mode === "pre-push"
+      ? remoteRepositoryVisibility(options.remoteLocation)
+      : "public");
+  const contentPolicy =
+    options.contentPolicy ?? readConfig(root, "workflow.contentPolicy")[0];
 
   if (options.mode === "pre-push") {
     for (const [localRef, localSha, remoteRef, remoteSha] of readPushTuples()) {
@@ -845,6 +886,8 @@ export function runCli(argv = process.argv.slice(2)) {
         ...scanCandidateTree(root, {
           revision: localSha,
           buildOutputPaths,
+          repositoryVisibility,
+          contentPolicy,
         }),
       );
     }
