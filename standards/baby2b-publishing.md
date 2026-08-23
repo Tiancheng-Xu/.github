@@ -17,12 +17,18 @@ build-command: pnpm build
 output-directory: dist
 pages-project: example-project-site
 production-url: https://example-project.baby2b.online/
-evidence-url: https://evidence.baby2b.online/example-project/
+evidence-url: https://example-project.baby2b.online/evidence/
 backup-url: ""
 ```
 
-Use `site-kind: evidence-hub` only for the central Evidence repository. Its
-production and Evidence URLs are both `https://evidence.baby2b.online/`.
+Deployed applications own `https://<slug>.baby2b.online/evidence/`. Skills,
+internal services, and projects without an independent Evidence page use
+`https://baby2b.online/evidence/<slug>` and are rendered by the Dashboard.
+Project manifests must not use the retired `evidence.baby2b.online` host.
+
+`site-kind: evidence-hub` remains accepted only while legacy redirects are
+migrated. Its production and Evidence URLs must both be the legacy host root;
+new repositories must not select this kind.
 
 ## Deployment ownership
 
@@ -46,8 +52,8 @@ A project is not published until all of the following are true:
 1. Repository verification and production build pass.
 2. Cloudflare Pages Git Integration reports a successful production build.
 3. The declared `baby2b.online` custom domain is active with valid TLS.
-4. Project and Evidence pages link to each other and return successful HTTP
-   responses.
+4. Project-owned or Dashboard-owned Evidence pages link to the portfolio and
+   project, use a canonical non-legacy URL, and return successful HTTP responses.
 5. The Evidence case records the deployed commit, checks, architecture,
    incidents, and proof without exposing secrets or private artifacts.
 
