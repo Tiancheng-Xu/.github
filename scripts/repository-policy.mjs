@@ -101,6 +101,7 @@ const EXCLUDED_DIRECTORY_NAMES = new Set([
 const LICENSE_FILE = /^(?:licen[cs]e|copying|notice)(?:\.[a-z0-9_-]+)?$/i;
 const ATTRIBUTION_LINE = /^[a-z][a-z0-9-]*-by:\s*.+$/i;
 const NON_PRODUCT_DOCUMENTATION_PREFIXES = Object.freeze([
+  "archive/",
   "docs/architecture/",
   "docs/delivery/",
   "docs/evidence/",
