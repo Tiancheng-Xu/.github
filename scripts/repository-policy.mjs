@@ -17,6 +17,14 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import {
+  AI_ENGINEERING_REVIEW_PATH,
+  aiEngineeringReviewViolations,
+  validateAiEngineeringReviewContract,
+} from "./ai-engineering-policy.mjs";
+
+export { AI_ENGINEERING_REVIEW_PATH, validateAiEngineeringReviewContract };
+
 const MAX_IN_MEMORY_BLOB = 32 * 1024 * 1024;
 const EVIDENCE_ARCHITECTURE_SECTIONS = Object.freeze([
   "runtime",
@@ -474,6 +482,14 @@ export function scanCandidateTree(root, options = {}) {
     },
   );
   violations.push(...evidenceManifestViolations(repositoryRoot, candidatePaths, revision));
+  violations.push(
+    ...aiEngineeringReviewViolations({
+      paths: candidatePaths,
+      read: (path) => trackedBuffer(repositoryRoot, path, revision),
+      isExcluded: isExcludedPath,
+      isNonProduct: isNonProductProjectMaterial,
+    }),
+  );
 
   for (const outputPath of options.buildOutputPaths ?? []) {
     const absoluteOutput = resolve(repositoryRoot, outputPath);
