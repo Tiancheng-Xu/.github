@@ -108,29 +108,21 @@ function validate(config) {
     "production-url must use a baby2b.online subdomain, except fullstack-showcase at the site root",
   );
   const evidence = parseHttpsUrl(config["evidence-url"], "evidence-url");
+  assert(
+    evidence.origin === "https://evidence.baby2b.online",
+    "evidence-url must use evidence.baby2b.online without a custom port",
+  );
 
   if (config["site-kind"] === "project") {
-	assert(
-		production.hostname !== "evidence.baby2b.online",
-		"project production-url must not use the retired Evidence host",
-	);
-    const projectOwnedEvidence =
-      evidence.origin === production.origin &&
-      evidence.pathname === "/evidence/";
-    const dashboardOwnedEvidence =
-      evidence.origin === "https://baby2b.online" &&
-      evidence.pathname === `/evidence/${config.slug}`;
     assert(
-      projectOwnedEvidence || dashboardOwnedEvidence,
-      "evidence-url must use the project production host at /evidence/ or baby2b.online/evidence/<slug>",
+      production.hostname !== "evidence.baby2b.online",
+      "project production-url must not use the Evidence host",
     );
+    assert(evidence.pathname === `/${config.slug}/`, "evidence-url path must match slug");
   } else {
     assert(
-      config.slug === "evidence" &&
-      config["pages-project"] === "baby2b-evidence" &&
-      config["production-url"] === "https://evidence.baby2b.online/" &&
-      config["evidence-url"] === "https://evidence.baby2b.online/",
-      "evidence-hub compatibility is limited to the legacy evidence manifest and root URL",
+      config["production-url"] === config["evidence-url"],
+      "evidence-hub production-url and evidence-url must match",
     );
   }
 

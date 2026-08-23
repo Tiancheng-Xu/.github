@@ -17,7 +17,7 @@ build-command: pnpm portfolio:build
 output-directory: apps/portfolio/dist
 pages-project: personal-ai-agent-site
 production-url: https://personal-ai-agent.baby2b.online/
-evidence-url: https://personal-ai-agent.baby2b.online/evidence/
+evidence-url: https://evidence.baby2b.online/personal-ai-agent/
 backup-url: ""
 `;
 
@@ -44,7 +44,7 @@ function runAction(manifest) {
   };
 }
 
-test("accepts a complete project publishing manifest", () => {
+test("accepts the canonical central Evidence URL for a project", () => {
   const result = runAction(projectManifest);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.output, /^slug=personal-ai-agent$/m);
@@ -58,21 +58,7 @@ test("accepts fullstack-showcase as the portfolio home at the site root", () => 
       .replace(
         "https://fullstack-showcase.baby2b.online/",
         "https://baby2b.online/",
-      )
-      .replace(
-        "https://fullstack-showcase.baby2b.online/evidence/",
-        "https://baby2b.online/evidence/fullstack-showcase",
       ),
-  );
-  assert.equal(result.status, 0, result.stderr);
-});
-
-test("accepts Dashboard-owned Evidence for an internal project", () => {
-  const result = runAction(
-    projectManifest.replace(
-      "https://personal-ai-agent.baby2b.online/evidence/",
-      "https://baby2b.online/evidence/personal-ai-agent",
-    ),
   );
   assert.equal(result.status, 0, result.stderr);
 });
@@ -115,83 +101,41 @@ for (const [name, manifest, expected] of [
     /output-directory.*relative/i,
   ],
   [
-    "rejects a project Evidence path that is not the project evidence root",
-    projectManifest.replace("/evidence/", "/wrong-project/"),
-    /evidence-url.*project production host/i,
+    "rejects a project Evidence path that differs from its slug",
+    projectManifest.replace("/personal-ai-agent/", "/wrong-project/"),
+    /evidence-url.*slug/i,
   ],
   [
-    "rejects the retired Evidence Hub as a project Evidence URL",
+    "rejects project-owned Evidence",
     projectManifest.replace(
-      "https://personal-ai-agent.baby2b.online/evidence/",
       "https://evidence.baby2b.online/personal-ai-agent/",
-    ),
-    /evidence-url.*project production host/i,
-  ],
-  [
-    "rejects a project that disguises the retired Evidence Hub as its production host",
-    projectManifest
-      .replaceAll("personal-ai-agent", "legacy-project")
-      .replaceAll(
-        "https://legacy-project.baby2b.online/",
-        "https://evidence.baby2b.online/",
-      ),
-		/project production-url.*retired Evidence host/i,
-	],
-	[
-		"rejects the retired Evidence Hub as production with Dashboard-owned Evidence",
-		projectManifest
-			.replace(
-				"https://personal-ai-agent.baby2b.online/",
-				"https://evidence.baby2b.online/",
-			)
-			.replace(
-				"https://personal-ai-agent.baby2b.online/evidence/",
-				"https://baby2b.online/evidence/personal-ai-agent",
-			),
-		/project production-url.*retired Evidence host/i,
-  ],
-  [
-    "rejects a project-owned Evidence URL without the canonical trailing slash",
-    projectManifest.replace("/evidence/", "/evidence"),
-    /evidence-url.*project production host/i,
-  ],
-  [
-    "rejects a Dashboard-owned Evidence path whose slug differs",
-    projectManifest.replace(
       "https://personal-ai-agent.baby2b.online/evidence/",
-      "https://baby2b.online/evidence/wrong-project",
     ),
-    /evidence-url.*project production host/i,
+    /evidence-url.*evidence\.baby2b\.online/i,
   ],
   [
-    "rejects a Dashboard-owned Evidence URL with a trailing slash",
+    "rejects an Evidence URL without the canonical trailing slash",
     projectManifest.replace(
-      "https://personal-ai-agent.baby2b.online/evidence/",
-      "https://baby2b.online/evidence/personal-ai-agent/",
+      "https://evidence.baby2b.online/personal-ai-agent/",
+      "https://evidence.baby2b.online/personal-ai-agent",
     ),
-    /evidence-url.*project production host/i,
+    /evidence-url.*slug/i,
   ],
   [
-    "rejects a Dashboard-owned Evidence URL with a custom port",
+    "rejects a custom Evidence port",
     projectManifest.replace(
-      "https://personal-ai-agent.baby2b.online/evidence/",
-      "https://baby2b.online:8443/evidence/personal-ai-agent",
+      "https://evidence.baby2b.online/",
+      "https://evidence.baby2b.online:8443/",
     ),
-    /evidence-url.*project production host/i,
+    /evidence-url.*custom port/i,
   ],
   [
-    "rejects the portfolio root with a custom port",
-    projectManifest
-      .replaceAll("personal-ai-agent", "fullstack-showcase")
-      .replace(
-        "https://fullstack-showcase.baby2b.online/",
-        "https://baby2b.online:8443/",
-      )
-      .replace(
-        "https://fullstack-showcase.baby2b.online/evidence/",
-        "https://baby2b.online/evidence/fullstack-showcase",
-      ),
-    /production-url.*fullstack-showcase/i,
+    "rejects the Evidence host as a project production URL",
+    projectManifest.replace(
+      "https://personal-ai-agent.baby2b.online/",
+      "https://evidence.baby2b.online/",
+    ),
+    /project production-url.*Evidence host/i,
   ],
   [
     "rejects duplicate keys",
@@ -223,54 +167,3 @@ test("rejects missing required keys", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /missing required key.*pages-project/i);
 });
-
-for (const [name, manifest] of [
-  [
-    "rejects evidence-hub compatibility for a different slug",
-    `schema-version: 1
-slug: another-evidence
-site-kind: evidence-hub
-production-branch: main
-build-command: npm run evidence:build
-output-directory: site
-pages-project: baby2b-evidence
-production-url: https://evidence.baby2b.online/
-evidence-url: https://evidence.baby2b.online/
-backup-url: ""
-`,
-  ],
-  [
-    "rejects evidence-hub compatibility outside the legacy root",
-    `schema-version: 1
-slug: evidence
-site-kind: evidence-hub
-production-branch: main
-build-command: npm run evidence:build
-output-directory: site
-pages-project: baby2b-evidence
-production-url: https://evidence.baby2b.online/anything
-evidence-url: https://evidence.baby2b.online/anything
-backup-url: ""
-`,
-  ],
-  [
-    "rejects evidence-hub compatibility for a different Pages project",
-    `schema-version: 1
-slug: evidence
-site-kind: evidence-hub
-production-branch: main
-build-command: npm run evidence:build
-output-directory: site
-pages-project: unrelated-project
-production-url: https://evidence.baby2b.online/
-evidence-url: https://evidence.baby2b.online/
-backup-url: ""
-`,
-  ],
-]) {
-  test(name, () => {
-    const result = runAction(manifest);
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /evidence-hub compatibility/i);
-  });
-}
