@@ -334,6 +334,7 @@ test("scans the full tracked tree and reports configured public wording", () => 
 test("allows required Evidence, architecture, and verification material in the tracked tree", () => {
   const cwd = createRepository();
   const allowedFiles = [
+    "archive/retired-workflow/README.md",
     "docs/architecture/system.mmd",
     "docs/delivery/implementation-map.md",
     "docs/evidence/deployment/proof.md",

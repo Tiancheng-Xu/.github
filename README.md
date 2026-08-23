@@ -32,12 +32,16 @@ custom workflow into every existing repository.
 
 The repository policy scans product source and configured public build outputs
 for retired course-only wording. Required project records are classified as
-non-product material only when they use the fixed `docs/architecture/`,
+non-product material only when they use the fixed `archive/`, `docs/architecture/`,
 `docs/delivery/`, `docs/evidence/`, `docs/homework/`, `docs/qa/`, or
 `docs/superpowers/` locations, a conventional test filename, or a
 `scripts/validate-*` / `scripts/verify-*` filename. This classification never
 exempts a configured public build output, product source, or `README.md`, and
 repositories cannot extend it with custom wildcard allowlists.
+
+Files below the fixed `archive/` prefix are historical, non-product material.
+That exemption applies only to retired product-copy wording; commit identity,
+secret, PII, unsafe path, and configured public build-output checks still run.
 
 Each adopting repository must keep the byte-for-byte canonical caller at
 `.github/workflows/repository-policy.yml`; the central workflow remains
@@ -52,3 +56,6 @@ are documented in [branch naming policy](docs/delivery/branch-naming-policy.md).
 - [Project delivery](standards/project-delivery.md)
 - [Portfolio and Evidence](standards/evidence-contract.md)
 - [Evidence manifest example](standards/evidence-manifest.example.json)
+- [AI Engineering review](standards/ai-engineering-review.md)
+
+AI product dependencies and imports activate the AI Engineering review contract. Root documentation and the fixed architecture, delivery, Evidence, QA, and Superpowers documentation paths do not activate this contract by themselves; they remain subject to the existing public-content and security boundaries.
