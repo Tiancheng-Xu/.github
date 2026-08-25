@@ -112,8 +112,11 @@ demo, or an interview replay.
 
 ## Repository boundary
 
-- Product code stays in its product repository.
-- Only an allowlisted, sanitized evidence bundle is copied to the central
-  Evidence repository.
+- Product code and its public Evidence route stay in the product repository
+  whenever the project has an independently deployed site.
+- Skills, internal services, and projects without a deployable site may publish
+  an allowlisted, sanitized Evidence case through the Dashboard repository.
+- The retired central Evidence repository is not a canonical destination for
+  new or updated project manifests.
 - Evidence publishing rejects credentials, local absolute paths, private data,
   model/data artifacts, and unapproved source material.

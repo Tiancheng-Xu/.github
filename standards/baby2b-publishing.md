@@ -17,17 +17,18 @@ build-command: pnpm build
 output-directory: dist
 pages-project: example-project-site
 production-url: https://example-project.baby2b.online/
-evidence-url: https://evidence.baby2b.online/example-project/
+evidence-url: https://example-project.baby2b.online/evidence/
 backup-url: ""
 ```
 
-Each project has one canonical Evidence case at
-`https://evidence.baby2b.online/<slug>/`. The central Evidence repository owns
-those cases, while project repositories own their product pages and link to the
-matching case.
+Deployed applications own `https://<slug>.baby2b.online/evidence/`. Skills,
+internal services, and projects without an independent Evidence page use
+`https://baby2b.online/evidence/<slug>` and are rendered by the Dashboard.
+Project manifests must not use the retired `evidence.baby2b.online` host.
 
-For `site-kind: evidence-hub`, production and Evidence URLs must both be
-`https://evidence.baby2b.online/`.
+`site-kind: evidence-hub` remains accepted only while legacy redirects are
+migrated. Its production and Evidence URLs must both be the legacy host root;
+new repositories must not select this kind.
 
 ## Deployment ownership
 
