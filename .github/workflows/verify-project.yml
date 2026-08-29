@@ -81,6 +81,16 @@ on:
         required: false
         default: ""
         type: string
+      performance-sampling-manifest:
+        description: Optional repository-relative secret-free Journey Manifest.
+        required: false
+        default: ""
+        type: string
+      performance-sampling-evidence:
+        description: Optional matching controlled-run Evidence for verified-run mode.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -149,6 +159,27 @@ jobs:
       - name: Static-first runtime matrix
         if: inputs['static-first-runtime-command'] != ''
         run: ${{ inputs['static-first-runtime-command'] }}
+      - name: Checkout performance sampling policy
+        if: inputs['performance-sampling-manifest'] != ''
+        uses: actions/checkout@v4
+        with:
+          repository: Tiancheng-Xu/.github
+          path: .shared-performance-sampling-policy
+          sparse-checkout: scripts/performance-sampling-policy.mjs
+      - name: Performance sampling contract gate
+        if: inputs['performance-sampling-manifest'] != ''
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --root "${{ github.workspace }}"
+            --manifest "${{ inputs['performance-sampling-manifest'] }}"
+          )
+          if [[ -n "${{ inputs['performance-sampling-evidence'] }}" ]]; then
+            args+=(--evidence "${{ inputs['performance-sampling-evidence'] }}")
+          fi
+          node .shared-performance-sampling-policy/scripts/performance-sampling-policy.mjs "${args[@]}"
       - name: Resolve introduced commit range
         id: commit-range
         shell: bash

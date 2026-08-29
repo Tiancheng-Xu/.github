@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "performance-sampling/v1",
+  "applicationId": "sample-application",
+  "verificationMode": "contract-only",
+  "allowedLocalOrigins": ["http://127.0.0.1:4173"],
+  "metrics": {
+    "requiredCoverage": [
+      "LCP", "CLS", "INP", "FCP", "TTFB",
+      "navigation.dns", "navigation.tcp", "navigation.tls",
+      "navigation.request_wait", "navigation.download",
+      "navigation.dom_ready", "navigation.window_load",
+      "route.duration", "resource.duration"
+    ],
+    "allowedUnavailable": []
+  },
+  "eventBudget": {
+    "maxEventsPerRoute": 30,
+    "maxTotalEvents": 100,
+    "maxTotalBatches": 20,
+    "maxAttemptsPerEvent": 3,
+    "attemptTimeoutMs": 3000,
+    "lifecycleDrainMs": 15000
+  },
+  "delivery": {
+    "identityKey": "eventId",
+    "requireAllUniqueEventsAccepted": true,
+    "dashboardCaptureMode": "intercept-202"
+  },
+  "safety": {
+    "forbiddenSampleActions": [
+      "chain-transaction", "wallet-signature", "synthetic-layout-shift", "synthetic-error"
+    ]
+  },
+  "routes": [
+    {
+      "path": "/",
+      "readiness": { "selector": "main h1", "text": "Sample application" },
+      "eventBudget": 30,
+      "allowedMetrics": [
+        "LCP", "CLS", "INP", "FCP", "TTFB",
+        "navigation.dns", "navigation.tcp", "navigation.tls",
+        "navigation.request_wait", "navigation.download",
+        "navigation.dom_ready", "navigation.window_load",
+        "route.duration", "resource.duration"
+      ],
+      "interactions": [
+        {
+          "id": "toggle-details",
+          "kind": "toggle",
+          "selector": "[data-performance-sample-toggle]",
+          "sideEffect": "none",
+          "expectedMetrics": ["INP"]
+        }
+      ]
+    }
+  ]
+}

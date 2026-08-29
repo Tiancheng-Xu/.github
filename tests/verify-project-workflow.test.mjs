@@ -33,3 +33,12 @@ test("shared verification never deploys or writes across repositories", () => {
   assert.doesNotMatch(workflow, /contents:\s*write/);
   assert.doesNotMatch(workflow, /repository-dispatch|workflow-dispatch/i);
 });
+
+test("offers an optional read-only performance sampling contract gate", () => {
+  assert.match(workflow, /^\s{6}performance-sampling-manifest:\s*$/m);
+  assert.match(workflow, /^\s{6}performance-sampling-evidence:\s*$/m);
+  assert.match(workflow, /name: Performance sampling contract gate/);
+  assert.match(workflow, /performance-sampling-policy\.mjs/);
+  assert.match(workflow, /--manifest/);
+  assert.match(workflow, /--evidence/);
+});
