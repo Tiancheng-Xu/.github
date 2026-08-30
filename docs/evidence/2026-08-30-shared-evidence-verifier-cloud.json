@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "shared-evidence-verifier-cloud/v1",
+  "status": "verified",
+  "capturedAt": "2026-08-30",
+  "implementationCommit": "96d22e92b594efb9d4e8a79c7df60becc74803f9",
+  "run": {
+    "id": "33290528028",
+    "url": "https://github.com/Tiancheng-Xu/.github/actions/runs/33290528028",
+    "conclusion": "success"
+  },
+  "aws": {
+    "stackName": "tc-shared-evidence-verifier",
+    "stackStatus": "UPDATE_COMPLETE",
+    "region": "us-east-1",
+    "resourceCount": 4,
+    "resourceTypes": [
+      "AWS::IAM::Role",
+      "AWS::IAM::Role",
+      "AWS::Lambda::Function",
+      "AWS::Logs::LogGroup"
+    ],
+    "vpcAttached": false,
+    "publicEndpoint": false,
+    "logRetentionDays": 7
+  },
+  "budget": {
+    "limitUsd": 40,
+    "actualBeforeUsd": 27.345,
+    "actualAfterUsd": 27.345,
+    "forecastUsd": null,
+    "forecastStatus": "unavailable"
+  },
+  "projects": [
+    {
+      "projectId": "fullstack-showcase",
+      "status": "verified",
+      "headShaVerified": true,
+      "repositoryCommitStatus": "verified",
+      "productionBinding": "repository-and-url",
+      "artifactId": 9725818050
+    },
+    {
+      "projectId": "github-profile-studio",
+      "status": "verified",
+      "headShaVerified": true,
+      "repositoryCommitStatus": "verified",
+      "productionBinding": "not-deployed",
+      "artifactId": 9725820429
+    },
+    {
+      "projectId": "performance-observability-control",
+      "status": "verified",
+      "headShaVerified": true,
+      "repositoryCommitStatus": "verified",
+      "productionBinding": "not-deployed",
+      "artifactId": 9725825270
+    },
+    {
+      "projectId": "portfolio-sync",
+      "status": "verified",
+      "headShaVerified": true,
+      "repositoryCommitStatus": "verified",
+      "productionBinding": "repository-and-url",
+      "artifactId": 9725822800
+    },
+    {
+      "projectId": "personal-ai-agent",
+      "status": "verified-with-limitations",
+      "headShaVerified": false,
+      "repositoryCommitStatus": "unavailable-private",
+      "productionBinding": "url-only-private-repository",
+      "artifactId": 9725814289
+    },
+    {
+      "projectId": "tc-workflow",
+      "status": "verified-with-limitations",
+      "headShaVerified": false,
+      "repositoryCommitStatus": "unavailable-private",
+      "productionBinding": "not-deployed",
+      "artifactId": 9725827903
+    }
+  ],
+  "limitations": [
+    "The verifier proves aws-verifier execution, not a complete project AWS runtime.",
+    "Private repository commits are declared but not externally verified without repository credentials.",
+    "GitHub Actions artifacts expire after seven days.",
+    "Budget forecast was unavailable and was not interpreted as zero."
+  ]
+}
