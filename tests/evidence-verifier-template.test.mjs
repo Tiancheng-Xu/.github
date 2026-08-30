@@ -46,7 +46,7 @@ test("trusts only the existing GitHub provider and central main branch", () => {
     "token.actions.githubusercontent.com:aud",
     "sts.amazonaws.com",
     "token.actions.githubusercontent.com:sub",
-    "repo:Tiancheng-Xu/.github:ref:refs/heads/main",
+    "repo:Tiancheng-Xu@44307608/.github@1328761732:ref:refs/heads/main",
   ]) {
     assert.ok(template.includes(expected), expected);
   }
