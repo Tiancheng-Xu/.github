@@ -86,7 +86,7 @@ workflow 不接受任意 URL、任意 Lambda ARN、任意 Role ARN 或自由文�
 - 128 MB
 - 10 秒超时
 - 非 VPC
-- 保留并发数 1
+- 不设置函数级保留并发。当前账户 Lambda 总并发为 10，AWS 会拒绝任何会把未保留并发降到 10 以下的配置；串行边界由无公网入口、精确 OIDC 主分支信任和 GitHub Actions `max-parallel: 1` 共同保证
 - 无 Function URL
 
 Lambda 接口只接收单个项目合同。验证内容：

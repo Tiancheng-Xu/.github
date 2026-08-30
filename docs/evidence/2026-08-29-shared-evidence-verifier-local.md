@@ -32,7 +32,7 @@ Agent Market and BabySteps are excluded because their AWS evidence is owned and 
 - No long-lived AWS access key is used.
 - GitHub OIDC trust is restricted to the central repository's `main` branch.
 - The Lambda has no VPC, NAT, RDS, ECS, load balancer, API Gateway, or new S3 bucket.
-- Reserved concurrency is `1`; the workflow matrix uses `max-parallel: 1`.
+- The account's Lambda concurrency quota is `10`, so AWS rejects function-level reserved concurrency that would reduce unreserved concurrency below its required minimum. Delivery remains serialized through no public function endpoint, exact GitHub OIDC `main` trust, and workflow `max-parallel: 1`.
 - CloudWatch retention is `7` days.
 - The verifier accepts only fixed HTTPS hosts, blocks redirects, IP literals, credentials, query strings, fragments, and non-standard ports, and limits response bodies to 1 MiB.
 - Artifacts contain allowlisted metadata and hashes, never response bodies, cookies, tokens, private paths, prompts, datasets, or model weights.
@@ -44,7 +44,9 @@ Agent Market and BabySteps are excluded because their AWS evidence is owned and 
 - Monthly budget limit: USD 40
 - Actual cost: USD 27.345
 - Forecast: unavailable
-- AWS writes performed by this implementation: none
+- AWS state after the failed initial Change Set: exact verifier Stack absent; attempted resources rolled back and deleted
+
+An initial CloudFormation Change Set execution failed because `ReservedConcurrentExecutions: 1` conflicts with the account-level concurrency quota. CloudFormation rolled back all attempted resources, and the exact rollback Stack was deleted and verified absent. No verifier invocation occurred. The failure is now covered by a deterministic regression contract.
 
 This snapshot is time-bound and must be read again immediately before any Change Set or verifier invocation.
 

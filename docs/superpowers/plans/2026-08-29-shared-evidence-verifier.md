@@ -95,7 +95,7 @@ Expected: PASS。
 
 - [ ] **Step 1: 写失败测试**
 
-断言只有 Lambda、7 日 LogGroup、Execution Role、OIDC Invoke Role；非 VPC、128 MB、10 秒、并发 1；OIDC `aud/sub` 精确；Invoke Role 只有精确 `lambda:InvokeFunction` 和精确 Budget read；Execution Role 只有自身日志写；禁止高成本资源和 wildcard 服务权限。
+断言只有 Lambda、7 日 LogGroup、Execution Role、OIDC Invoke Role；非 VPC、128 MB、10 秒；函数不设置与账户最低未保留并发冲突的保留并发，改由无公网入口、精确 OIDC 主分支信任和 Actions `max-parallel: 1` 串行化；OIDC `aud/sub` 精确；Invoke Role 只有精确 `lambda:InvokeFunction` 和精确 Budget read；Execution Role 只有自身日志写；禁止高成本资源和 wildcard 服务权限。
 
 - [ ] **Step 2: 验证 RED**
 
