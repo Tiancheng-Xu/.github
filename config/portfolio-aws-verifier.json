@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "portfolio-aws-verifier/v1",
+  "projects": [
+    {
+      "projectId": "personal-ai-agent",
+      "repository": "Tiancheng-Xu/personal-ai-agent",
+      "headSha": "9f4bcb6d66bff4b918c8acc2a0a3da573c5272e7",
+      "deliveryStatus": "completed",
+      "productionUrl": "https://personal-ai-agent.baby2b.online/",
+      "evidenceUrl": "https://personal-ai-agent.baby2b.online/evidence/",
+      "checks": ["repository-commit", "production-page", "evidence-page"],
+      "expectedMarkers": {
+        "production": ["Personal AI Agent"],
+        "evidence": ["Personal AI Agent", "工作证明"]
+      }
+    },
+    {
+      "projectId": "fullstack-showcase",
+      "repository": "Tiancheng-Xu/fullstack-showcase",
+      "headSha": "f8be139bbf49cf48fa6d9a4a06fa36d1f95e403c",
+      "deliveryStatus": "completed",
+      "productionUrl": "https://baby2b.online/dashboard/",
+      "evidenceUrl": "https://baby2b.online/evidence/fullstack-showcase/",
+      "checks": ["repository-commit", "production-page", "evidence-page"],
+      "expectedMarkers": {
+        "production": ["Showcase Dashboard"],
+        "evidence": ["Showcase Dashboard"]
+      }
+    },
+    {
+      "projectId": "github-profile-studio",
+      "repository": "Tiancheng-Xu/github-profile-studio",
+      "headSha": "391a7b92f03d1be7198037a97d02d77417a23420",
+      "deliveryStatus": "in-progress",
+      "productionUrl": null,
+      "evidenceUrl": "https://baby2b.online/evidence/github-profile-studio/",
+      "checks": ["repository-commit", "evidence-page"],
+      "expectedMarkers": {
+        "production": [],
+        "evidence": ["GitHub Profile Studio"]
+      }
+    },
+    {
+      "projectId": "portfolio-sync",
+      "repository": "Tiancheng-Xu/fullstack-showcase",
+      "headSha": "f8be139bbf49cf48fa6d9a4a06fa36d1f95e403c",
+      "deliveryStatus": "completed",
+      "productionUrl": "https://portfolio-sync.baby2b.online/health",
+      "evidenceUrl": "https://baby2b.online/evidence/portfolio-sync/",
+      "checks": ["repository-commit", "production-page", "evidence-page"],
+      "expectedMarkers": {
+        "production": ["\"status\":\"ready\""],
+        "evidence": ["Portfolio Sync"]
+      }
+    },
+    {
+      "projectId": "performance-observability-control",
+      "repository": "Tiancheng-Xu/fullstack-showcase",
+      "headSha": "f8be139bbf49cf48fa6d9a4a06fa36d1f95e403c",
+      "deliveryStatus": "in-progress",
+      "productionUrl": null,
+      "evidenceUrl": "https://baby2b.online/evidence/performance-observability-control/",
+      "checks": ["repository-commit", "evidence-page"],
+      "expectedMarkers": {
+        "production": [],
+        "evidence": ["性能观测与成本控制"]
+      }
+    },
+    {
+      "projectId": "tc-workflow",
+      "repository": "Tiancheng-Xu/personal-skills",
+      "headSha": "ed7caceb67f1aeff8fe547881a8f34cf2e021757",
+      "deliveryStatus": "completed",
+      "productionUrl": null,
+      "evidenceUrl": "https://baby2b.online/evidence/tc-workflow/",
+      "checks": ["repository-commit", "evidence-page"],
+      "expectedMarkers": {
+        "production": [],
+        "evidence": ["TC Flow 2.1"]
+      }
+    }
+  ]
+}
