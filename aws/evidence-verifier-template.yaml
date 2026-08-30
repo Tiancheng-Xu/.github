@@ -73,7 +73,6 @@ Resources:
         - arm64
       MemorySize: 128
       Timeout: 10
-      ReservedConcurrentExecutions: 1
       Role: !GetAtt VerifierExecutionRole.Arn
       Tags:
         owner: shared-portfolio-platform
