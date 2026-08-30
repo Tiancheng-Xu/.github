@@ -5,7 +5,7 @@ import pathlib
 import unittest
 
 
-MODULE_PATH = pathlib.Path(__file__).with_name("handler.py")
+MODULE_PATH = pathlib.Path(__file__).with_name("runtime") / "handler.py"
 SPEC = importlib.util.spec_from_file_location("evidence_verifier_handler", MODULE_PATH)
 handler = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(handler)

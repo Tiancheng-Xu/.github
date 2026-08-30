@@ -27,7 +27,7 @@ test("pins the Lambda runtime, capacity, timeout, log group, and non-VPC boundar
     "MemorySize: 128",
     "Timeout: 10",
     "ReservedConcurrentExecutions: 1",
-    "CodeUri: evidence-verifier/",
+    "CodeUri: evidence-verifier/runtime/",
     "Role: !GetAtt VerifierExecutionRole.Arn",
     "DependsOn: VerifierLogGroup",
     "RetentionInDays: 7",

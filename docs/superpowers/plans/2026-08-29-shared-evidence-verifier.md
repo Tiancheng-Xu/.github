@@ -56,7 +56,7 @@ Expected: PASS。
 ### Task 2: Lambda Verifier
 
 **Files:**
-- Create: `aws/evidence-verifier/handler.py`
+- Create: `aws/evidence-verifier/runtime/handler.py`
 - Create: `aws/evidence-verifier/test_handler.py`
 
 **Interfaces:**
