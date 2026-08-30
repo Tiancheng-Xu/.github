@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Shared read-only verifier for public portfolio delivery evidence.
+
+Parameters:
+  OidcProviderArn:
+    Type: String
+    Description: Existing GitHub Actions OIDC provider ARN.
+    AllowedPattern: ^arn:[a-z0-9-]+:iam::[0-9]{12}:oidc-provider/token\.actions\.githubusercontent\.com$
+  BudgetName:
+    Type: String
+    Default: My Monthly Cost Budget
+    AllowedPattern: ^[A-Za-z0-9 _.-]{1,100}$
+  FunctionName:
+    Type: String
+    Default: tc-shared-evidence-verifier
+    AllowedPattern: ^[A-Za-z0-9-_]{1,64}$
+  InvokeRoleName:
+    Type: String
+    Default: tc-shared-evidence-verifier-github
+    AllowedPattern: ^[A-Za-z0-9+=,.@_-]{1,64}$
+
+Resources:
+  VerifierLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${FunctionName}
+      RetentionInDays: 7
+      Tags:
+        - Key: owner
+          Value: shared-portfolio-platform
+        - Key: lifecycle
+          Value: shared-protected
+
+  VerifierExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: tc-shared-evidence-verifier-runtime
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: write-exact-verifier-log-streams
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub ${VerifierLogGroup.Arn}:*
+      Tags:
+        - Key: owner
+          Value: shared-portfolio-platform
+        - Key: lifecycle
+          Value: shared-protected
+
+  VerifierFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: VerifierLogGroup
+    Properties:
+      FunctionName: !Ref FunctionName
+      CodeUri: evidence-verifier/
+      Handler: handler.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - arm64
+      MemorySize: 128
+      Timeout: 10
+      ReservedConcurrentExecutions: 1
+      Role: !GetAtt VerifierExecutionRole.Arn
+      Tags:
+        owner: shared-portfolio-platform
+        lifecycle: shared-protected
+
+  VerifierInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref InvokeRoleName
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref OidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: repo:Tiancheng-Xu/.github:ref:refs/heads/main
+      Policies:
+        - PolicyName: invoke-exact-evidence-verifier
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt VerifierFunction.Arn
+              - Effect: Allow
+                Action: budgets:ViewBudget
+                Resource: !Sub arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${BudgetName}
+      Tags:
+        - Key: owner
+          Value: shared-portfolio-platform
+        - Key: lifecycle
+          Value: shared-protected
+
+Outputs:
+  VerifierFunctionName:
+    Description: Exact Lambda function name for the central workflow variable.
+    Value: !Ref VerifierFunction
+  VerifierInvokeRoleArn:
+    Description: Exact GitHub OIDC role ARN for the central workflow variable.
+    Value: !GetAtt VerifierInvokeRole.Arn
