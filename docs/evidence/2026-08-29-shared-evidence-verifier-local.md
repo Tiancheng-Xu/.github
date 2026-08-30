@@ -48,6 +48,8 @@ Agent Market and BabySteps are excluded because their AWS evidence is owned and 
 
 An initial CloudFormation Change Set execution failed because `ReservedConcurrentExecutions: 1` conflicts with the account-level concurrency quota. CloudFormation rolled back all attempted resources, and the exact rollback Stack was deleted and verified absent. No verifier invocation occurred. The failure is now covered by a deterministic regression contract.
 
+The corrected Stack later reached `CREATE_COMPLETE`, but the first fixed-matrix GitHub Actions run (`33289666213`) could not assume the OIDC role and was cancelled before any Lambda invocation. No project result artifact was produced. A sanitized OIDC Claim Gate was added to expose and validate only `sub`, `aud`, `ref`, repository identifiers, and workflow reference while keeping the JWT itself out of logs and artifacts. Cloud verification remains pending until a new run passes.
+
 This snapshot is time-bound and must be read again immediately before any Change Set or verifier invocation.
 
 ## Production binding contract
