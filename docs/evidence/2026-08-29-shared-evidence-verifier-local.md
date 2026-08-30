@@ -50,6 +50,8 @@ An initial CloudFormation Change Set execution failed because `ReservedConcurren
 
 The corrected Stack later reached `CREATE_COMPLETE`, but the first fixed-matrix GitHub Actions run (`33289666213`) could not assume the OIDC role and was cancelled before any Lambda invocation. No project result artifact was produced. A sanitized OIDC Claim Gate was added to expose and validate only `sub`, `aud`, `ref`, repository identifiers, and workflow reference while keeping the JWT itself out of logs and artifacts. Cloud verification remains pending until a new run passes.
 
+The Claim Gate run (`33289923686`) proved that this GitHub organization uses an immutable owner/repository-ID-bound OIDC subject. The run was cancelled before AWS role assumption or Lambda invocation. The trust contract was tightened to the exact observed ID-bound `main` subject rather than broadened with a wildcard.
+
 This snapshot is time-bound and must be read again immediately before any Change Set or verifier invocation.
 
 ## Production binding contract

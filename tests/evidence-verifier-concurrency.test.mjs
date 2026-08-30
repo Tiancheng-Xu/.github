@@ -15,5 +15,8 @@ test("shared verifier uses delivery-level serialization without reserved concurr
   assert.doesNotMatch(template, /ReservedConcurrentExecutions:/);
   assert.match(workflow, /max-parallel:\s*1/);
   assert.doesNotMatch(template, /FunctionUrlConfig:|AWS::ApiGateway|AWS::ApiGatewayV2/);
-  assert.match(template, /repo:Tiancheng-Xu\/\.github:ref:refs\/heads\/main/);
+  assert.match(
+    template,
+    /repo:Tiancheng-Xu@44307608\/\.github@1328761732:ref:refs\/heads\/main/,
+  );
 });

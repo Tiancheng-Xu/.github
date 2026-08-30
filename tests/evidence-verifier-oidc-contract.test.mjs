@@ -13,7 +13,10 @@ test("workflow validates sanitized OIDC claims before assuming the AWS role", ()
 
   assert.ok(claimGate >= 0);
   assert.ok(credentialStep > claimGate);
-  assert.match(workflow, /EXPECTED_OIDC_SUB: repo:Tiancheng-Xu\/\.github:ref:refs\/heads\/main/);
+  assert.match(
+    workflow,
+    /EXPECTED_OIDC_SUB: repo:Tiancheng-Xu@44307608\/\.github@1328761732:ref:refs\/heads\/main/,
+  );
   assert.match(workflow, /ACTIONS_ID_TOKEN_REQUEST_TOKEN/);
   assert.match(workflow, /os\.environ\["TOKEN"\]\.split\("\."\)\[1\]/);
   assert.doesNotMatch(workflow, /echo\s+"?\$TOKEN/);

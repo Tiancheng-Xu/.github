@@ -112,7 +112,7 @@ Lambda 返回 `portfolio-aws-verifier-evidence/v1`，不把异常堆栈或页面
 
 - Provider 为现有 `token.actions.githubusercontent.com`。
 - `aud` 必须为 `sts.amazonaws.com`。
-- `sub` 必须精确匹配 `repo:Tiancheng-Xu/.github:ref:refs/heads/main`。
+- `sub` 必须精确匹配该 GitHub 组织已启用的不可变 ID 绑定格式：`repo:Tiancheng-Xu@44307608/.github@1328761732:ref:refs/heads/main`。不得退回名称通配或 `repo:*`。
 
 权限只允许：
 
