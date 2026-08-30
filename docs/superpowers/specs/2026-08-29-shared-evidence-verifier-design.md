@@ -23,6 +23,8 @@
 - 所有外部输入均来自受保护的中央仓库 `main` 固定清单，不接受任意 URL 的手工输入。
 - 验证失败必须 fail-closed；HTTP 200 不能替代页面语义、提交绑定和 Evidence 真实性。
 - 输出必须脱敏，不保存 Cookie、Token、Authorization、页面正文、用户输入或私有地址。
+- 初次部署只允许使用 MFA 登录的 `course-platform-admin`；禁止 Root 部署。日常调用只使用 GitHub OIDC。
+- 部署和矩阵运行前读取 `My Monthly Cost Budget`：Actual 达到 `$34`（上限 `$40` 的 85%）即停止；Forecast 达到或超过 `$40` 也停止。Forecast 不可用时必须披露，不得伪造成零。
 
 ## 3. 选型
 
@@ -91,12 +93,14 @@ Lambda 接口只接收单个项目合同。验证内容：
 
 - repository 必须属于 `Tiancheng-Xu` 允许列表。
 - `headSha` 必须是 40 位十六进制字符串。
+- 必须通过 GitHub 公共 API 确认该 SHA 存在于声明仓库，并回显完整 SHA。
 - URL 必须为 HTTPS，并属于 `baby2b.online`、其受控子域或 `github.com`。
 - 禁止 IP literal、localhost、私网、链路本地地址和非标准端口。
 - 禁止自动跟随重定向；非规范 URL 直接失败。
 - 限制响应体读取上限；不在日志或结果中保存正文。
 - 校验 HTTP 状态、Content-Type、必要的标题或语义 marker。
 - 记录响应体 SHA-256、允许列表响应头、耗时和采集时间。
+- 若生产页面包含构建 SHA marker，记录 `productionBinding: embedded-sha`；否则只能记录 `productionBinding: repository-and-url`，不得声称生产部署与 SHA 已形成强绑定。
 
 Lambda 返回 `portfolio-aws-verifier-evidence/v1`，不把异常堆栈或页面正文返回给调用方。
 
@@ -113,6 +117,7 @@ Lambda 返回 `portfolio-aws-verifier-evidence/v1`，不把异常堆栈或页面
 权限只允许：
 
 - 对精确 Verifier Lambda 执行 `lambda:InvokeFunction`。
+- 读取精确月度 Budget，用于 `$34/$40` 的运行前硬 Gate。
 
 不允许 IAM 写、CloudFormation 写、S3 列举、日志读取或调用其他 Lambda。
 
@@ -143,6 +148,8 @@ CloudFormation Stack：`tc-shared-evidence-verifier`
 
 增量使用量为 6 次短 Lambda 调用和少量日志。预计接近零并可能落在免费额度内，但 Evidence 只记录真实账单与调用量，不承诺绝对零费用。
 
+初次部署使用 CloudFormation Change Set。执行前必须检查变更只包含本节列出的资源；创建失败时只处理精确 Stack `tc-shared-evidence-verifier`，先读回失败资源，再删除该 Stack 并验证新资源为零。现有 OIDC Provider、共享 Foundation、Budget 和其他项目资源始终受保护。
+
 ## 7. 数据合同与 Evidence
 
 每个项目结果至少包含：
@@ -160,6 +167,8 @@ CloudFormation Stack：`tc-shared-evidence-verifier`
 - `capturedAt`
 - `provenance: aws-verifier`
 - `limitations`
+- `productionBinding`
+- `budgetActualBefore`
 
 Evidence 必须保存：
 
@@ -206,6 +215,8 @@ Verifier 是共享资源，不随单次项目验证删除。若未来退役，�
 4. 校验每个项目的 Request ID、SHA、URL 语义和 Artifact。
 5. 回读 Budget 与 CloudWatch 调用量。
 6. 将结果同步到各项目 Evidence 和 Dashboard，保持状态边界。
+
+部署前还必须确认调用身份精确等于 `course-platform-admin`，并保存 Change Set 资源类型、Budget 读回和共享资源保护清单。身份不匹配、Budget 超阈值或 Change Set 出现未批准资源时立即停止。
 
 ## 10. 完成标准
 
