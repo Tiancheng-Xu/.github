@@ -17,6 +17,7 @@ def project(**overrides):
     value = {
         "projectId": "sample-project",
         "repository": "Tiancheng-Xu/sample-project",
+        "repositoryVisibility": "public",
         "headSha": SHA,
         "deliveryStatus": "completed",
         "productionUrl": "https://sample-project.baby2b.online/",
@@ -145,6 +146,25 @@ class VerifierTests(unittest.TestCase):
         self.assertEqual(result["status"], "verified")
         self.assertEqual(result["production"], {"status": "not-deployed"})
         self.assertEqual(result["productionBinding"], "not-deployed")
+
+    def test_private_repository_is_verified_with_explicit_commit_limitation(self):
+        value = project(
+            repositoryVisibility="private",
+            checks=["production-page", "evidence-page"],
+        )
+        requested_urls = []
+
+        def fetcher(url, _content_types):
+            requested_urls.append(url)
+            body = ("Sample Project" if not url.endswith("evidence/") else "工作证明").encode()
+            return {"status": 200, "contentType": "text/html", "body": body, "bodySha256": hashlib.sha256(body).hexdigest(), "headers": {}, "durationMs": 3}
+
+        result = handler.verify_project(value, "aws-request-123", fetcher=fetcher)
+        self.assertEqual(result["status"], "verified-with-limitations")
+        self.assertFalse(result["headShaVerified"])
+        self.assertEqual(result["repositoryCommit"]["status"], "unavailable-private")
+        self.assertEqual(result["productionBinding"], "url-only-private-repository")
+        self.assertFalse(any("api.github.com" in url for url in requested_urls))
 
     def test_lambda_handler_fails_closed_and_never_echoes_credentials(self):
         value = project(apiToken="do-not-return-this")

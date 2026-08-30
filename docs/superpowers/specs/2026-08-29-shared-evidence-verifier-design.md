@@ -223,7 +223,8 @@ Verifier 是共享资源，不随单次项目验证删除。若未来退役，�
 - 本地、远端 policy、测试、IaC 与预算 Gate 全绿。
 - CloudFormation 只包含批准的四类资源。
 - 六个项目各有一次真实 Lambda Request ID。
-- 每项结果绑定精确 repo、SHA、URL、Run 与 Artifact。
+- 每项结果绑定精确 repo、声明 SHA、URL、Run 与 Artifact；只有公开仓库 commit 检查通过时才能标记 SHA 已验证。
+- 私有仓库边界：匿名 Lambda 无法验证私有 commit，且不得引入长期 GitHub Token 或 App 私钥来伪造“无密钥”架构。固定清单必须声明 `repositoryVisibility`。公开仓库仍要求 exact commit；私有仓库只验证公开 Production/Evidence，结果为 `verified-with-limitations`，保留声明 SHA 但明确 `headShaVerified=false` 与 `repositoryCommit.status=unavailable-private`。
 - 未部署项目明确显示 `not-deployed`。
 - Dashboard 仅新增 `AWS Verifier` 事实，不把它改写为 AWS Runtime。
 - 无 Secret、Token、Cookie、正文或私有路径进入公开 Evidence。

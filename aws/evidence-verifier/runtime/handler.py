@@ -14,6 +14,7 @@ TIMEOUT_SECONDS = 3
 ALLOWED_EVENT_KEYS = {
     "projectId",
     "repository",
+    "repositoryVisibility",
     "headSha",
     "deliveryStatus",
     "productionUrl",
@@ -131,6 +132,8 @@ def validate_event(event):
         raise VerificationError("invalid-project-id")
     if not REPOSITORY_PATTERN.fullmatch(event["repository"]):
         raise VerificationError("invalid-repository")
+    if event["repositoryVisibility"] not in ("public", "private"):
+        raise VerificationError("invalid-repository-visibility")
     if not SHA_PATTERN.fullmatch(event["headSha"]):
         raise VerificationError("invalid-head-sha")
     if not isinstance(event["verificationRunId"], str) or not event["verificationRunId"].isdigit():
@@ -142,6 +145,12 @@ def validate_event(event):
         validate_url(event["productionUrl"])
     if not isinstance(event["expectedMarkers"], dict):
         raise VerificationError("invalid-markers")
+    if not isinstance(event["checks"], list) or "evidence-page" not in event["checks"]:
+        raise VerificationError("invalid-checks")
+    if event["repositoryVisibility"] == "public" and "repository-commit" not in event["checks"]:
+        raise VerificationError("public-repository-commit-check-required")
+    if event["repositoryVisibility"] == "private" and "repository-commit" in event["checks"]:
+        raise VerificationError("private-repository-commit-check-forbidden")
 
 
 def endpoint_evidence(url, fetched, markers):
@@ -163,18 +172,37 @@ def endpoint_evidence(url, fetched, markers):
 
 def verify_project(event, request_id, fetcher=fetch_bounded):
     validate_event(event)
-    owner, repository_name = event["repository"].split("/", 1)
-    commit_url = (
-        f"https://api.github.com/repos/{quote(owner, safe='')}/{quote(repository_name, safe='')}"
-        f"/commits/{event['headSha']}"
-    )
-    commit_fetch = fetcher(commit_url, ("application/json",))
-    try:
-        commit_payload = json.loads(commit_fetch["body"].decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise VerificationError("commit-response-invalid") from error
-    if not isinstance(commit_payload, dict) or commit_payload.get("sha") != event["headSha"]:
-        raise VerificationError("commit-sha-mismatch")
+    limitations = []
+    if event["repositoryVisibility"] == "public":
+        owner, repository_name = event["repository"].split("/", 1)
+        commit_url = (
+            f"https://api.github.com/repos/{quote(owner, safe='')}/{quote(repository_name, safe='')}"
+            f"/commits/{event['headSha']}"
+        )
+        commit_fetch = fetcher(commit_url, ("application/json",))
+        try:
+            commit_payload = json.loads(commit_fetch["body"].decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise VerificationError("commit-response-invalid") from error
+        if not isinstance(commit_payload, dict) or commit_payload.get("sha") != event["headSha"]:
+            raise VerificationError("commit-sha-mismatch")
+        repository_commit = {
+            "status": "verified",
+            "url": commit_url,
+            "sha": commit_payload["sha"],
+            "bodySha256": commit_fetch["bodySha256"],
+            "durationMs": commit_fetch["durationMs"],
+        }
+        head_sha_verified = True
+        result_status = "verified"
+    else:
+        repository_commit = {
+            "status": "unavailable-private",
+            "declaredSha": event["headSha"],
+        }
+        head_sha_verified = False
+        result_status = "verified-with-limitations"
+        limitations.append("Private repository commit is declared but cannot be verified without a repository credential.")
 
     evidence_fetch = fetcher(event["evidenceUrl"], ("text/html", "application/json"))
     evidence_result = endpoint_evidence(
@@ -183,7 +211,6 @@ def verify_project(event, request_id, fetcher=fetch_bounded):
         event["expectedMarkers"]["evidence"],
     )
 
-    limitations = []
     if event["productionUrl"] is None:
         production_result = {"status": "not-deployed"}
         production_binding = "not-deployed"
@@ -195,7 +222,9 @@ def verify_project(event, request_id, fetcher=fetch_bounded):
             production_fetch,
             event["expectedMarkers"]["production"],
         )
-        if event["headSha"].encode() in production_fetch["body"]:
+        if not head_sha_verified:
+            production_binding = "url-only-private-repository"
+        elif event["headSha"].encode() in production_fetch["body"]:
             production_binding = "embedded-sha"
         else:
             production_binding = "repository-and-url"
@@ -206,20 +235,15 @@ def verify_project(event, request_id, fetcher=fetch_bounded):
         "projectId": event["projectId"],
         "repository": event["repository"],
         "headSha": event["headSha"],
+        "headShaVerified": head_sha_verified,
         "verificationRunId": event["verificationRunId"],
         "awsRequestId": request_id,
-        "status": "verified",
+        "status": result_status,
         "provenance": "aws-verifier",
         "deliveryStatus": event["deliveryStatus"],
         "productionBinding": production_binding,
         "budgetActualBefore": event["budgetActualBefore"],
-        "repositoryCommit": {
-            "status": "verified",
-            "url": commit_url,
-            "sha": commit_payload["sha"],
-            "bodySha256": commit_fetch["bodySha256"],
-            "durationMs": commit_fetch["durationMs"],
-        },
+        "repositoryCommit": repository_commit,
         "production": production_result,
         "evidence": evidence_result,
         "capturedAt": captured_at(),
