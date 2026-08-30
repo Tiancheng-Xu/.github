@@ -43,6 +43,7 @@ function allowedUrl(value) {
       && (url.port === "" || url.port === "443")
       && url.username === ""
       && url.password === ""
+      && url.search === ""
       && url.hash === "";
   } catch {
     return false;

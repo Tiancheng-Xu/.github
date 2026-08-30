@@ -88,6 +88,7 @@ class VerifierTests(unittest.TestCase):
             "https://localhost/",
             "https://sample.baby2b.online:8443/",
             "https://user:pass@baby2b.online/",
+            "https://baby2b.online/evidence/sample/?access=dynamic",
         ]:
             with self.subTest(url=url), self.assertRaises(handler.VerificationError):
                 handler.validate_url(url)

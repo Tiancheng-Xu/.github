@@ -72,6 +72,7 @@ def validate_url(value):
         or port not in (None, 443)
         or parsed.username is not None
         or parsed.password is not None
+        or parsed.query
         or parsed.fragment
     ):
         raise VerificationError("url-not-allowed")

@@ -71,9 +71,10 @@ test("rejects arbitrary hosts, IP literals, non-standard ports, and credential-s
   projects[1].evidenceUrl = "https://127.0.0.1/evidence/";
   projects[2].productionUrl = "https://project-3.baby2b.online:8443/";
   projects[3].apiToken = "must-not-enter-the-manifest";
+  projects[4].evidenceUrl = "https://baby2b.online/evidence/project-5/?access=dynamic";
   const result = verifyEvidenceVerifierManifest({ root: fixture(manifest(projects)), manifest: "manifest.json" });
   assert.equal(result.ok, false);
-  assert.ok(result.violations.filter(({ code }) => code === "url-not-allowed").length >= 3);
+  assert.ok(result.violations.filter(({ code }) => code === "url-not-allowed").length >= 4);
   assert.ok(result.violations.some(({ code }) => code === "sensitive-field-forbidden"));
 });
 
