@@ -52,6 +52,8 @@ The corrected Stack later reached `CREATE_COMPLETE`, but the first fixed-matrix 
 
 The Claim Gate run (`33289923686`) proved that this GitHub organization uses an immutable owner/repository-ID-bound OIDC subject. The run was cancelled before AWS role assumption or Lambda invocation. The trust contract was tightened to the exact observed ID-bound `main` subject rather than broadened with a wildcard.
 
+Run `33290113502` proved OIDC, Budget read, Lambda invocation, and seven-day Artifact upload. Four public-repository-backed projects passed. Personal AI Agent and TC Flow failed because their repositories are private and anonymous GitHub commit lookup is unavailable. The contract now preserves that boundary as `verified-with-limitations`; it does not add a GitHub Token or App private key, and it does not claim their declared commits were externally verified.
+
 This snapshot is time-bound and must be read again immediately before any Change Set or verifier invocation.
 
 ## Production binding contract

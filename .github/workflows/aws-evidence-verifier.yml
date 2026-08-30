@@ -161,14 +161,25 @@ jobs:
           jq -e \
             --arg project_id "${{ matrix.project.projectId }}" \
             --arg head_sha "${{ matrix.project.headSha }}" \
+            --arg repository_visibility "${{ matrix.project.repositoryVisibility }}" \
             --arg run_id "$GITHUB_RUN_ID" '
               .schemaVersion == "portfolio-aws-verifier-evidence/v1"
               and .projectId == $project_id
               and .headSha == $head_sha
               and .verificationRunId == $run_id
-              and .status == "verified"
               and .provenance == "aws-verifier"
               and (.awsRequestId | type == "string" and length > 0)
+              and (
+                if $repository_visibility == "public" then
+                  .status == "verified"
+                  and .headShaVerified == true
+                  and .repositoryCommit.status == "verified"
+                else
+                  .status == "verified-with-limitations"
+                  and .headShaVerified == false
+                  and .repositoryCommit.status == "unavailable-private"
+                end
+              )
             ' response.json
 
       - name: Retain the sanitized result

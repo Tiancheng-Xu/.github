@@ -7,11 +7,12 @@ import { pathToFileURL } from "node:url";
 
 const TOP_LEVEL_KEYS = new Set(["schemaVersion", "projects"]);
 const PROJECT_KEYS = new Set([
-  "projectId", "repository", "headSha", "deliveryStatus", "productionUrl",
+  "projectId", "repository", "repositoryVisibility", "headSha", "deliveryStatus", "productionUrl",
   "evidenceUrl", "checks", "expectedMarkers",
 ]);
 const CHECKS = new Set(["repository-commit", "production-page", "evidence-page"]);
 const DELIVERY_STATUSES = new Set(["completed", "in-progress"]);
+const REPOSITORY_VISIBILITIES = new Set(["public", "private"]);
 const SENSITIVE_KEY = /(?:authorization|cookie|token|secret|private.?key|password|prompt|model.?weight)/iu;
 
 function isObject(value) {
@@ -69,6 +70,7 @@ function validateProject(project, index, violations) {
   }
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(project.projectId ?? "")) violations.push({ code: "invalid-project-id", path: `${path}.projectId` });
   if (!/^Tiancheng-Xu\/[A-Za-z0-9._-]+$/u.test(project.repository ?? "")) violations.push({ code: "invalid-repository", path: `${path}.repository` });
+  if (!REPOSITORY_VISIBILITIES.has(project.repositoryVisibility)) violations.push({ code: "invalid-repository-visibility", path: `${path}.repositoryVisibility` });
   if (!/^[a-f0-9]{40}$/u.test(project.headSha ?? "")) violations.push({ code: "invalid-head-sha", path: `${path}.headSha` });
   if (!DELIVERY_STATUSES.has(project.deliveryStatus)) violations.push({ code: "invalid-delivery-status", path: `${path}.deliveryStatus` });
   if (project.productionUrl !== null && !allowedUrl(project.productionUrl)) violations.push({ code: "url-not-allowed", path: `${path}.productionUrl` });
@@ -76,7 +78,9 @@ function validateProject(project, index, violations) {
   if (!Array.isArray(project.checks) || project.checks.some((check) => !CHECKS.has(check)) || new Set(project.checks).size !== project.checks.length) {
     violations.push({ code: "invalid-checks", path: `${path}.checks` });
   } else {
-    if (!project.checks.includes("repository-commit") || !project.checks.includes("evidence-page")) violations.push({ code: "required-check-missing", path: `${path}.checks` });
+    if (!project.checks.includes("evidence-page")) violations.push({ code: "required-check-missing", path: `${path}.checks` });
+    if (project.repositoryVisibility === "public" && !project.checks.includes("repository-commit")) violations.push({ code: "public-repository-commit-check-required", path: `${path}.checks` });
+    if (project.repositoryVisibility === "private" && project.checks.includes("repository-commit")) violations.push({ code: "private-repository-commit-check-forbidden", path: `${path}.checks` });
     const hasProductionCheck = project.checks.includes("production-page");
     if ((project.productionUrl === null && hasProductionCheck) || (project.productionUrl !== null && !hasProductionCheck)) {
       violations.push({ code: "production-check-mismatch", path: `${path}.checks` });

@@ -11,6 +11,7 @@ function project(index, overrides = {}) {
   return {
     projectId: `project-${index}`,
     repository: `Tiancheng-Xu/project-${index}`,
+    repositoryVisibility: "public",
     headSha: SHA,
     deliveryStatus: "completed",
     productionUrl: `https://project-${index}.baby2b.online/`,
