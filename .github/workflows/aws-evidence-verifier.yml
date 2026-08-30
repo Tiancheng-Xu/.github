@@ -1,0 +1,142 @@
+name: Shared Portfolio AWS Evidence Verifier
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-portfolio-evidence-verifier
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      projects: ${{ steps.matrix.outputs.projects }}
+    steps:
+      - name: Check out the fixed contract
+        uses: actions/checkout@v4
+
+      - name: Validate the fixed project manifest
+        run: node scripts/evidence-verifier-policy.mjs --manifest config/portfolio-aws-verifier.json
+
+      - name: Build the bounded project matrix
+        id: matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          projects="$(jq -c '.projects' config/portfolio-aws-verifier.json)"
+          printf 'projects=%s\n' "$projects" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify ${{ matrix.project.projectId }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        project: ${{ fromJSON(needs.prepare.outputs.projects) }}
+    env:
+      AWS_REGION: us-east-1
+      BUDGET_NAME: My Monthly Cost Budget
+      PROJECT_JSON: ${{ toJSON(matrix.project) }}
+    steps:
+      - name: Require fixed repository variables
+        shell: bash
+        env:
+          ROLE_ARN: ${{ vars.AWS_EVIDENCE_VERIFIER_ROLE_ARN }}
+          FUNCTION_NAME: ${{ vars.AWS_EVIDENCE_VERIFIER_FUNCTION_NAME }}
+        run: |
+          set -euo pipefail
+          test -n "$ROLE_ARN"
+          test -n "$FUNCTION_NAME"
+
+      - name: Configure short-lived AWS identity
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_EVIDENCE_VERIFIER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: portfolio-verifier-${{ github.run_id }}
+
+      - name: Verify identity and budget
+        id: budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="$(aws sts get-caller-identity --output json)"
+          account_id="$(jq -r '.Account' <<< "$identity")"
+          aws budgets describe-budget \
+            --account-id "$account_id" \
+            --budget-name "$BUDGET_NAME" \
+            --output json > budget.json
+          actual="$(jq -r '.Budget.CalculatedSpend.ActualSpend.Amount | tonumber' budget.json)"
+          forecast="$(jq -r '.Budget.CalculatedSpend.ForecastedSpend.Amount // empty' budget.json)"
+          # Fail closed when actual >= 34 or forecast >= 40.
+          jq -e --argjson actual "$actual" --arg forecast "$forecast" '
+            ($actual < 34) and (($forecast == "") or (($forecast | tonumber) < 40))
+          ' <<< '{}'
+          printf 'actual=%s\n' "$actual" >> "$GITHUB_OUTPUT"
+          jq '{budgetName: .Budget.BudgetName, limit: .Budget.BudgetLimit, actual: .Budget.CalculatedSpend.ActualSpend, forecast: (.Budget.CalculatedSpend.ForecastedSpend // null)}' \
+            budget.json > budget-summary.json
+
+      - name: Build file-based invocation payload
+        shell: bash
+        env:
+          BUDGET_ACTUAL: ${{ steps.budget.outputs.actual }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PROJECT_JSON" | jq -e . > project.json
+          jq \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --argjson budget_actual "$BUDGET_ACTUAL" \
+            '. + {verificationRunId: $run_id, budgetActualBefore: $budget_actual}' \
+            project.json > payload.json
+          jq -n \
+            --arg project_id "${{ matrix.project.projectId }}" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            '{schemaVersion:"portfolio-aws-verifier-evidence/v1", projectId:$project_id, verificationRunId:$run_id, status:"invoke-pending", provenance:"aws-verifier"}' \
+            > response.json
+
+      - name: Invoke the exact shared verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "${{ vars.AWS_EVIDENCE_VERIFIER_FUNCTION_NAME }}" \
+            --cli-binary-format raw-in-base64-out \
+            --payload fileb://payload.json \
+            response.json > invocation-metadata.json
+
+      - name: Validate the verifier response
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e \
+            --arg project_id "${{ matrix.project.projectId }}" \
+            --arg head_sha "${{ matrix.project.headSha }}" \
+            --arg run_id "$GITHUB_RUN_ID" '
+              .schemaVersion == "portfolio-aws-verifier-evidence/v1"
+              and .projectId == $project_id
+              and .headSha == $head_sha
+              and .verificationRunId == $run_id
+              and .status == "verified"
+              and .provenance == "aws-verifier"
+              and (.awsRequestId | type == "string" and length > 0)
+            ' response.json
+
+      - name: Retain the sanitized result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-verifier-${{ matrix.project.projectId }}-${{ github.run_id }}
+          path: |
+            response.json
+            budget-summary.json
+          if-no-files-found: error
+          retention-days: 7
