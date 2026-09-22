@@ -96,7 +96,7 @@
       "checks": ["repository-commit", "production-page", "evidence-page"],
       "expectedMarkers": {
         "production": ["Agent Market"],
-        "evidence": ["Agent Market", "工作证明"]
+        "evidence": ["Agent Market", "Evidence"]
       }
     }
   ]
