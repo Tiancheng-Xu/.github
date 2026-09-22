@@ -121,8 +121,8 @@ export function verifyEvidenceVerifierManifest({ root = process.cwd(), manifest 
     if (!TOP_LEVEL_KEYS.has(key)) violations.push({ code: "unknown-top-level-key", path: `manifest.${key}` });
   }
   if (value.schemaVersion !== "portfolio-aws-verifier/v1") violations.push({ code: "unsupported-schema-version" });
-  if (!Array.isArray(value.projects) || value.projects.length !== 6) {
-    violations.push({ code: "six-project-manifest-required" });
+  if (!Array.isArray(value.projects) || value.projects.length !== 7) {
+    violations.push({ code: "seven-project-manifest-required" });
   } else {
     value.projects.forEach((project, index) => validateProject(project, index, violations));
     const ids = value.projects.map(({ projectId }) => projectId);

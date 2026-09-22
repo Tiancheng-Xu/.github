@@ -25,7 +25,7 @@ function project(index, overrides = {}) {
   };
 }
 
-function manifest(projects = Array.from({ length: 6 }, (_, index) => project(index + 1))) {
+function manifest(projects = Array.from({ length: 7 }, (_, index) => project(index + 1))) {
   return { schemaVersion: "portfolio-aws-verifier/v1", projects };
 }
 
@@ -35,11 +35,11 @@ function fixture(value) {
   return root;
 }
 
-test("accepts the six-project fixed verifier manifest", () => {
+test("accepts the seven-project fixed verifier manifest", () => {
   const root = fixture(manifest());
   const result = verifyEvidenceVerifierManifest({ root, manifest: "manifest.json" });
   assert.equal(result.ok, true, JSON.stringify(result.violations));
-  assert.equal(result.projects.length, 6);
+  assert.equal(result.projects.length, 7);
 });
 
 test("accepts a truthful project without an independent production URL", () => {
@@ -79,11 +79,11 @@ test("rejects arbitrary hosts, IP literals, non-standard ports, and credential-s
   assert.ok(result.violations.some(({ code }) => code === "sensitive-field-forbidden"));
 });
 
-test("the tracked portfolio manifest stays valid and fixed at six projects", () => {
+test("the tracked portfolio manifest stays valid and fixed at seven projects", () => {
   const result = verifyEvidenceVerifierManifest({
     root: process.cwd(),
     manifest: "config/portfolio-aws-verifier.json",
   });
   assert.equal(result.ok, true, JSON.stringify(result.violations));
-  assert.equal(result.projects.length, 6);
+  assert.equal(result.projects.length, 7);
 });

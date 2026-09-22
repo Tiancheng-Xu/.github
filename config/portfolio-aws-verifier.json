@@ -84,6 +84,20 @@
         "production": [],
         "evidence": ["TC Flow 2.1"]
       }
+    },
+    {
+      "projectId": "agent-market",
+      "repository": "Tiancheng-Xu/agent-market",
+      "repositoryVisibility": "public",
+      "headSha": "12c487ee12fe3e515f36390327dda12166c05589",
+      "deliveryStatus": "completed",
+      "productionUrl": "https://agent-market.baby2b.online/",
+      "evidenceUrl": "https://agent-market.baby2b.online/evidence/",
+      "checks": ["repository-commit", "production-page", "evidence-page"],
+      "expectedMarkers": {
+        "production": ["Agent Market"],
+        "evidence": ["Agent Market", "工作证明"]
+      }
     }
   ]
 }
