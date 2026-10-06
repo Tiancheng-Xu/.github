@@ -43,6 +43,12 @@ Files below the fixed `archive/` prefix are historical, non-product material.
 That exemption applies only to retired product-copy wording; commit identity,
 secret, PII, unsafe path, and configured public build-output checks still run.
 
+Gitlinks (mode `160000`) are submodule commit pointers, not files in the
+superproject, and are excluded from content reads. This does not exempt ordinary
+tracked or untracked files, including `.gitmodules`, from policy scanning.
+Submodule contents require their own repository checks; they are not recursively
+scanned by the superproject policy.
+
 Each adopting repository must keep the byte-for-byte canonical caller at
 `.github/workflows/repository-policy.yml`; the central workflow remains
 read-only and runs on pull requests.

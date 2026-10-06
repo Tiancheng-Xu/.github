@@ -248,9 +248,17 @@ function trackedBlobIsBinary(root, path, revision) {
 
 function trackedPaths(root, revision) {
   const args = revision
-    ? ["ls-tree", "-r", "--name-only", "-z", revision]
-    : ["ls-files", "-z", "--cached", "--others", "--exclude-standard"];
-  return git(root, args).split("\0").filter(Boolean);
+    ? ["ls-tree", "-r", "-z", revision]
+    : ["ls-files", "--stage", "-z", "--cached"];
+  // Gitlinks store a submodule commit, not readable superproject content.
+  // Keep the mode metadata so only those entries are excluded, not filenames.
+  const indexedPaths = git(root, args).split("\0")
+    .filter((entry) => entry && !entry.startsWith("160000 "))
+    .map((entry) => entry.slice(entry.indexOf("\t") + 1));
+  if (revision) return indexedPaths;
+  const untrackedPaths = git(root, ["ls-files", "-z", "--others", "--exclude-standard"])
+    .split("\0").filter(Boolean);
+  return [...new Set([...indexedPaths, ...untrackedPaths])];
 }
 
 function trackedBuffer(root, path, revision) {

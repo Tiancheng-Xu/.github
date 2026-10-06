@@ -331,6 +331,30 @@ test("scans the full tracked tree and reports configured public wording", () => 
   assert.equal(violations[0].code, "blocked-public-content");
 });
 
+for (const revision of [undefined, "HEAD"]) {
+  test(`does not read gitlinks as blobs in ${revision ?? "index"} scans`, () => {
+    const cwd = createRepository();
+    // Submodule commits need not be present in the superproject object store.
+    git(cwd, "update-index", "--add", "--cacheinfo",
+      "160000,1111111111111111111111111111111111111111,compat-tests");
+    writeFileSync(join(cwd, "product.txt"), `public ${productOnlyPhrase}\n`);
+    git(cwd, "add", "product.txt");
+    git(cwd, "commit", "-qm", "track a submodule and product file");
+    writeFileSync(join(cwd, "untracked.txt"), `public ${productOnlyPhrase}\n`);
+
+    const violations = scanCandidateTree(cwd, {
+      revision,
+      blockedTerms: [productOnlyPhrase],
+    });
+
+    assert.deepEqual(
+      violations.map(({ code, path }) => ({ code, path })),
+      (revision ? ["product.txt"] : ["product.txt", "untracked.txt"])
+        .map((path) => ({ code: "blocked-public-content", path })),
+    );
+  });
+}
+
 test("allows required Evidence, architecture, and verification material in the tracked tree", () => {
   const cwd = createRepository();
   const allowedFiles = [
