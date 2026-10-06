@@ -154,10 +154,10 @@ function isNonProductProjectMaterial(path) {
   );
 }
 
-function inspectBuffer(buffer, blockedTerms) {
+function inspectBuffer(buffer, blockedTerms, allowInvalidEncoding = false) {
   if (buffer.includes(0)) return { binary: true, policyTerms: [] };
   try {
-    const content = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    const content = new TextDecoder("utf-8", { fatal: !allowInvalidEncoding }).decode(buffer);
     const lower = content.toLowerCase();
     return {
       binary: false,
@@ -314,15 +314,19 @@ function contentViolations(root, paths, options) {
       });
       continue;
     }
-    const inspection = inspectBuffer(buffer, options.blockedTerms);
+    let inspection = inspectBuffer(buffer, options.blockedTerms);
     if (inspection.binary) continue;
     if (inspection.decodingFailed) {
-      violations.push({
-        code: "content-decoding-failed",
-        path,
-        scope: options.scope,
-      });
-      continue;
+      if (!options.inheritedEncodingFixture?.(path)) {
+        violations.push({
+          code: "content-decoding-failed",
+          path,
+          scope: options.scope,
+        });
+        continue;
+      }
+      // Keep scanning readable wording in inherited malformed test data.
+      inspection = inspectBuffer(buffer, options.blockedTerms, true);
     }
     for (const policyTerm of inspection.policyTerms) {
       violations.push({
@@ -488,6 +492,9 @@ export function scanCandidateTree(root, options = {}) {
       blockedTerms,
       read: (path) => trackedBuffer(repositoryRoot, path, revision),
       isBinary: (path) => trackedBlobIsBinary(repositoryRoot, path, revision),
+      inheritedEncodingFixture: inheritedEncodingFixtureChecker(
+        repositoryRoot, revision, options.encodingBaselines ?? [],
+      ),
       scope: "tracked-tree",
     },
   );
@@ -814,19 +821,54 @@ function ensureRemoteCommit(root, remoteLocation, remoteRef, remoteSha) {
   }
 }
 
-function pendingCommits(root, localSha, remoteSha, remoteRef, remoteLocation) {
+function pendingPush(root, localSha, remoteSha, remoteRef, remoteLocation) {
   if (remoteSha && !isNullOid(remoteSha)) {
     ensureRemoteCommit(root, remoteLocation, remoteRef, remoteSha);
-    return git(root, ["rev-list", `${remoteSha}..${localSha}`])
-      .split("\n")
-      .filter(Boolean);
+    return {
+      commits: git(root, ["rev-list", `${remoteSha}..${localSha}`]).split("\n").filter(Boolean),
+      encodingBaselines: [remoteSha],
+    };
   }
   const remoteTips = remoteCommitTips(root, remoteLocation);
   const args = ["rev-list", localSha];
   if (remoteTips.length > 0) args.push("--not", ...remoteTips);
-  return git(root, args)
-    .split("\n")
-    .filter(Boolean);
+  return {
+    commits: git(root, args).split("\n").filter(Boolean),
+    encodingBaselines: remoteTips,
+  };
+}
+
+function inheritedEncodingFixtureChecker(root, revision, baselines) {
+  const ancestors = new Map();
+  const localOnly = { env: { ...process.env, GIT_NO_LAZY_FETCH: "1" } };
+  function regularFileEntry(at, path) {
+    const entries = git(root, ["ls-tree", "-z", at, "--", path], localOnly).split("\0");
+    return entries.find((entry) =>
+      /^100(?:644|755) blob /.test(entry) && entry.slice(entry.indexOf("\t") + 1) === path,
+    );
+  }
+  return (path) => {
+    if (!revision || baselines.length === 0 ||
+      !/(?:^|\/)(?:tests?|fixtures?)\//.test(path) ||
+      /(?:^|\/)(?:docs?|documentation)\//i.test(path) ||
+      /(?:^|\/)(?:readme|changelog|contributing|code_of_conduct)(?:\.|$)/i.test(path) ||
+      /\.(?:md|mdx|markdown|mdown|mkd|rst|rest|adoc|asciidoc|org|rtf|textile|tex)$/i.test(path)) return false;
+    try {
+      const candidate = regularFileEntry(revision, path);
+      if (!candidate) return false;
+      for (const baseline of baselines) {
+        if (!ancestors.has(baseline)) {
+          ancestors.set(baseline, spawnSync("git", ["merge-base", "--is-ancestor", baseline, revision], {
+            cwd: root, env: localOnly.env, stdio: "ignore",
+          }).status === 0);
+        }
+        if (ancestors.get(baseline) && regularFileEntry(baseline, path) === candidate) return true;
+      }
+    } catch {
+      // Missing objects or failed comparisons never authorize an exception.
+    }
+    return false;
+  };
 }
 
 function readPushTuples() {
@@ -858,22 +900,18 @@ export function runCli(argv = process.argv.slice(2)) {
       if (isNullOid(localSha)) continue;
       violations.push(...validateRefName(localRef));
       violations.push(...validateRefName(remoteRef));
+      const pending = pendingPush(root, localSha, remoteSha, remoteRef, options.remoteLocation);
       violations.push(
         ...inspectCommitList(
           root,
-          pendingCommits(
-            root,
-            localSha,
-            remoteSha,
-            remoteRef,
-            options.remoteLocation,
-          ),
+          pending.commits,
           owner,
         ),
       );
       violations.push(
         ...scanCandidateTree(root, {
           revision: localSha,
+          encodingBaselines: pending.encodingBaselines,
           buildOutputPaths,
         }),
       );

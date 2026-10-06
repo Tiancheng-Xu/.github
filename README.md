@@ -55,6 +55,14 @@ are not fetched implicitly: omitting them can audit extra commits, but cannot
 hide an outgoing commit. Local remote-tracking refs alone are never trusted as
 proof that a commit already exists at the push destination.
 
+Pre-push checks preserve malformed-encoding test data only when the same regular
+file entry (path, blob, and mode) exists in an ancestor confirmed on the actual
+push destination. Only test/fixture directories qualify, not documentation or public
+build outputs. New or changed samples, product files, unrelated history, and
+unverified local refs still fail strict UTF-8 decoding. Readable wording in an
+inherited sample is still scanned using replacement decoding. Audit and CI modes
+remain strict; this adds no configurable path allowlist or author exemption.
+
 Each adopting repository must keep the byte-for-byte canonical caller at
 `.github/workflows/repository-policy.yml`; the central workflow remains
 read-only and runs on pull requests.

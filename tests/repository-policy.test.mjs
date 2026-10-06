@@ -725,6 +725,127 @@ test("pre-push hook allows a compliant owner tree", () => {
   assert.match(result.stdout + result.stderr, /Repository policy passed/);
 });
 
+function createInheritedEncodingFixture(path = "tests/fixtures/invalid.js", content) {
+  const { cwd, remote } = createPushFixture();
+  mkdirSync(dirname(join(cwd, path)), { recursive: true });
+  writeFileSync(join(cwd, path), content ?? Buffer.from([0x2f, 0x2f, 0xff, 0xfe, 0xfd]));
+  git(cwd, "add", path);
+  git(cwd, "commit", "-qm", "upstream invalid encoding sample");
+  // Seed actual remote history, as in a fork made from an upstream repository.
+  git(remote, "fetch", "-q", cwd, "HEAD:refs/heads/main");
+  git(cwd, "switch", "-c", "encoding-feature");
+  writeFileSync(join(cwd, "README.md"), "safe feature\n");
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "safe feature");
+  return { cwd, remote, path };
+}
+
+for (const target of ["HEAD", "HEAD:main"]) {
+  test(`pre-push preserves an unchanged remote invalid-encoding fixture (${target})`, () => {
+    const { cwd, remote } = createInheritedEncodingFixture();
+    const result = spawnSync("git", ["push", "origin", target], { cwd, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const ref = target === "HEAD" ? "encoding-feature" : "main";
+    assert.equal(git(remote, "rev-parse", `refs/heads/${ref}`), git(cwd, "rev-parse", "HEAD"));
+  });
+}
+
+test("pre-push rejects changes to an inherited invalid-encoding fixture", () => {
+  const { cwd, path } = createInheritedEncodingFixture();
+  writeFileSync(join(cwd, path), Buffer.from([0x2f, 0x2f, 0xff, 0xfd]));
+  git(cwd, "add", path);
+  git(cwd, "commit", "-qm", "changed invalid sample");
+  const result = spawnSync("git", ["push", "origin", "HEAD"], { cwd, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /content-decoding-failed/);
+});
+
+test("pre-push rejects a new path with identical inherited invalid bytes", () => {
+  const { cwd } = createInheritedEncodingFixture();
+  writeFileSync(join(cwd, "tests/fixtures/new.js"), Buffer.from([0x2f, 0x2f, 0xff, 0xfe, 0xfd]));
+  git(cwd, "add", "tests/fixtures/new.js");
+  git(cwd, "commit", "-qm", "new invalid sample");
+  const result = spawnSync("git", ["push", "origin", "HEAD"], { cwd, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /content-decoding-failed.*tests\/fixtures\/new.js/);
+});
+
+test("pre-push rejects unchanged invalid-encoding product source", () => {
+  const { cwd } = createInheritedEncodingFixture("src/index.js");
+  const result = spawnSync("git", ["push", "origin", "HEAD"], { cwd, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /content-decoding-failed.*src\/index.js/);
+});
+
+test("pre-push still scans wording in inherited invalid-encoding fixtures", () => {
+  const content = Buffer.concat([Buffer.from(`// ${productOnlyPhrase} ${retiredAlias}`), Buffer.from([0xff])]);
+  const { cwd } = createInheritedEncodingFixture("tests/fixtures/invalid.js", content);
+  const result = spawnSync("git", ["push", "origin", "HEAD"], { cwd, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /blocked-public-content/);
+  assert.doesNotMatch(result.stderr, new RegExp(productOnlyPhrase));
+});
+
+test("pre-push does not trust a forged local encoding baseline", () => {
+  const { cwd } = createPushFixture();
+  mkdirSync(join(cwd, "tests/fixtures"), { recursive: true });
+  writeFileSync(join(cwd, "tests/fixtures/invalid.js"), Buffer.from([0x2f, 0x2f, 0xff]));
+  git(cwd, "add", "tests/fixtures/invalid.js");
+  git(cwd, "commit", "-qm", "new invalid sample");
+  git(cwd, "update-ref", "refs/remotes/fake/main", git(cwd, "rev-parse", "HEAD"));
+  const result = spawnSync("git", ["push", "origin", "HEAD"], { cwd, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /content-decoding-failed/);
+});
+
+test("pre-push rejects a matching invalid fixture from unrelated remote history", () => {
+  const { cwd } = createInheritedEncodingFixture();
+  git(cwd, "switch", "--orphan", "unrelated-feature");
+  mkdirSync(join(cwd, "tests/fixtures"), { recursive: true });
+  writeFileSync(join(cwd, "README.md"), "safe unrelated tree\n");
+  writeFileSync(join(cwd, "tests/fixtures/invalid.js"), Buffer.from([0x2f, 0x2f, 0xff, 0xfe, 0xfd]));
+  git(cwd, "add", "README.md", "tests/fixtures/invalid.js");
+  git(cwd, "commit", "-qm", "unrelated owner tree");
+  const result = spawnSync("git", ["push", "--force", "origin", "HEAD:main"], { cwd, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /content-decoding-failed/);
+});
+
+test("pre-push rejects a mode change to an inherited invalid-encoding fixture", () => {
+  const { cwd, path } = createInheritedEncodingFixture();
+  git(cwd, "update-index", "--chmod=+x", path);
+  git(cwd, "commit", "-qm", "change sample mode");
+  const result = spawnSync("git", ["push", "origin", "HEAD"], { cwd, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /content-decoding-failed/);
+});
+
+test("pre-push rejects invalid-encoding documentation inside tests", () => {
+  const { cwd } = createInheritedEncodingFixture("tests/README.md");
+  const result = spawnSync("git", ["push", "origin", "HEAD"], { cwd, encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /content-decoding-failed/);
+});
+
+test("pre-push keeps configured public output strict for inherited fixtures", () => {
+  const { cwd } = createInheritedEncodingFixture();
+  const result = spawnSync("git", ["push", "origin", "HEAD"], {
+    cwd, encoding: "utf8",
+    env: { ...process.env, REPOSITORY_POLICY_BUILD_OUTPUTS: "tests/fixtures" },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /content-decoding-failed/);
+});
+
+for (const path of ["tests/fixtures/notes.markdown", "tests/fixtures/policy.adoc", "tests/docs/notes.txt", "tests/README"]) {
+  test(`pre-push keeps inherited documentation strict (${path})`, () => {
+    const { cwd } = createInheritedEncodingFixture(path);
+    const result = spawnSync("git", ["push", "origin", "HEAD"], { cwd, encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /content-decoding-failed/);
+  });
+}
+
 test("pre-push hook allows a compliant new branch on a non-empty remote", () => {
   const { cwd } = createPushFixture();
   git(cwd, "push", "-u", "origin", "HEAD");
