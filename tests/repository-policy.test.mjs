@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   inspectCommitRange,
@@ -738,6 +738,43 @@ test("pre-push hook allows a compliant new branch on a non-empty remote", () => 
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("new-branch push does not fetch unrelated promisor tips", () => {
+  const { cwd, remote } = createPushFixture();
+  git(cwd, "push", "origin", "HEAD:main");
+  git(remote, "config", "uploadpack.allowFilter", "true");
+
+  const unrelated = createRepository();
+  writeFileSync(join(unrelated, "README.md"), "unrelated remote history\n");
+  git(unrelated, "add", "README.md");
+  git(unrelated, "commit", "-qm", "unrelated remote tip");
+  const unrelatedOid = git(unrelated, "rev-parse", "HEAD");
+  git(unrelated, "config", "workflow.ownerName", owner.name);
+  git(unrelated, "config", "workflow.ownerEmail", owner.emails[0]);
+  git(unrelated, "push", remote, "HEAD:refs/tags/unrelated");
+
+  const partial = join(mkdtempSync(join(tmpdir(), "policy-promisor-")), "project");
+  git(cwd, "clone", "--quiet", "--no-tags", "--depth=1", "--filter=blob:none",
+    "--branch", "main", pathToFileURL(remote).href, partial);
+  for (const [key, value] of [
+    ["user.name", owner.name], ["user.email", owner.emails[0]],
+    ["workflow.ownerName", owner.name], ["workflow.ownerEmail", owner.emails[0]],
+    ["core.hooksPath", policyHooksPath],
+  ]) git(partial, "config", key, value);
+  git(partial, "switch", "-c", "safe-feature");
+  writeFileSync(join(partial, "README.md"), "safe feature\n");
+  git(partial, "add", "README.md");
+  git(partial, "commit", "-qm", "safe feature");
+
+  const result = spawnSync("git", ["push", "origin", "HEAD"], {
+    cwd: partial, encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const probe = spawnSync("git", ["cat-file", "-e", unrelatedOid], {
+    cwd: partial, env: { ...process.env, GIT_NO_LAZY_FETCH: "1" }, stdio: "ignore",
+  });
+  assert.notEqual(probe.status, 0, "unrelated tag history must remain unfetched");
 });
 
 test("pre-push hook blocks configured public wording", () => {

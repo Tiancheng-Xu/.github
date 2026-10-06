@@ -49,6 +49,12 @@ tracked or untracked files, including `.gitmodules`, from policy scanning.
 Submodule contents require their own repository checks; they are not recursively
 scanned by the superproject policy.
 
+New-branch author checks exclude only locally available commit tips whose exact
+object IDs are confirmed on the destination remote. Unavailable, unrelated tips
+are not fetched implicitly: omitting them can audit extra commits, but cannot
+hide an outgoing commit. Local remote-tracking refs alone are never trusted as
+proof that a commit already exists at the push destination.
+
 Each adopting repository must keep the byte-for-byte canonical caller at
 `.github/workflows/repository-policy.yml`; the central workflow remains
 read-only and runs on pull requests.

@@ -118,6 +118,7 @@ function git(root, args, options = {}) {
   return execFileSync("git", args, {
     cwd: root,
     encoding: options.encoding ?? "utf8",
+    env: options.env,
     input: options.input,
     maxBuffer: 512 * 1024 * 1024,
   });
@@ -753,7 +754,9 @@ function parseArguments(argv) {
 
 function hasObject(root, revision) {
   try {
-    git(root, ["cat-file", "-e", revision]);
+    git(root, ["cat-file", "-e", revision], {
+      env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
+    });
     return true;
   } catch {
     return false;
@@ -783,14 +786,16 @@ function remoteCommitTips(root, remoteLocation) {
     .trim()
     .split("\n")
     .map((line) => line.trim().split(/\s+/, 2));
-  const missingRefs = rows
-    .filter(([oid]) => !hasObject(root, oid))
-    .map(([, ref]) => ref);
-  fetchRemoteRefs(root, remoteLocation, missingRefs);
   const tips = [];
   for (const [oid] of rows) {
+    // Only exclude commits proven present on the destination remote. Missing
+    // unrelated tips stay out of the exclusion set: that audits more commits,
+    // never fewer, and avoids fetching every old tag in a partial clone.
+    if (!hasObject(root, oid)) continue;
     try {
-      tips.push(git(root, ["rev-parse", "--verify", `${oid}^{commit}`]).trim());
+      tips.push(git(root, ["rev-parse", "--verify", `${oid}^{commit}`], {
+        env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
+      }).trim());
     } catch {
       // Non-commit tag targets do not provide a commit baseline.
     }
