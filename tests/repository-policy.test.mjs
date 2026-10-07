@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -116,6 +116,138 @@ function createPushFixture() {
   git(cwd, "add", "README.md");
   git(cwd, "commit", "-qm", "initial owner commit");
   return { cwd, remote };
+}
+
+function createVerifiedForkPushFixture({ extraBlockedOccurrence = false } = {}) {
+  const { cwd, remote } = createPushFixture();
+  mkdirSync(join(cwd, "ui", "dist", "assets"), { recursive: true });
+  writeFileSync(join(cwd, "ui", "dist", "assets", "index-old.js"), "export const baseline = 1;\n");
+  git(cwd, "add", "-f", "ui/dist/assets/index-old.js");
+  git(cwd, "commit", "-qm", "fork base asset");
+  const forkBase = git(cwd, "rev-parse", "HEAD");
+  git(cwd, "push", "-q", "origin", `${forkBase}:refs/heads/main`);
+  git(cwd, "switch", "-qc", "upstream-main", forkBase);
+  mkdirSync(join(cwd, "ui", "messages"), { recursive: true });
+  mkdirSync(join(cwd, "ui", "dist", "assets"), { recursive: true });
+  mkdirSync(join(cwd, "ui", "dist", "pdfjs", "6.3.289", "cmaps"), { recursive: true });
+  writeFileSync(
+    join(cwd, "ui", "messages", "zh-CN.json"),
+    JSON.stringify({ labels: [productOnlyPhrase, productOnlyPhrase] }),
+  );
+  writeFileSync(
+    join(cwd, "ui", "dist", "assets", "index-old.js"),
+    `${"export const stable = 1;\n".repeat(20)}export const labels = [${JSON.stringify(productOnlyPhrase)}, ${JSON.stringify(productOnlyPhrase)}];\n`,
+  );
+  writeFileSync(
+    join(cwd, "ui", "dist", "pdfjs", "6.3.289", "cmaps", "CNS2-V.bcmap"),
+    Buffer.from([0x2f, 0x2f, 0xff, 0xfe, 0xfd]),
+  );
+  git(cwd, "add", "-f", "ui");
+  execFileSync("git", ["-c", "user.name=Upstream Maintainer", "-c", "user.email=maintainer@example.invalid", "commit", "-qm", "upstream content\n\nCo-authored-by: Dependabot <bot@example.invalid>"], {
+    cwd,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Upstream Maintainer",
+      GIT_AUTHOR_EMAIL: "maintainer@example.invalid",
+      GIT_COMMITTER_NAME: "Upstream Maintainer",
+      GIT_COMMITTER_EMAIL: "maintainer@example.invalid",
+    },
+  });
+  const upstreamBase = git(cwd, "rev-parse", "HEAD");
+
+  git(cwd, "switch", "-qc", "feature", forkBase);
+  writeFileSync(join(cwd, "README.md"), "owner feature\n");
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "owner feature");
+  git(cwd, "rm", "-q", "ui/dist/assets/index-old.js");
+  mkdirSync(join(cwd, "ui", "dist", "assets"), { recursive: true });
+  writeFileSync(
+    join(cwd, "ui", "dist", "assets", "index-new.js"),
+    `${"export const stable = 1;\n".repeat(20)}export const labels = [${JSON.stringify(productOnlyPhrase)}, ${JSON.stringify(productOnlyPhrase)}]; export const duration = 3;\n`,
+  );
+  git(cwd, "add", "-f", "ui/dist/assets/index-new.js");
+  git(cwd, "commit", "-qm", "rebuild changed public asset");
+
+  const merge = spawnSync("git", ["merge", "--no-ff", "upstream-main", "-m", "Merge upstream main"], {
+    cwd,
+    encoding: "utf8",
+  });
+  assert.equal(merge.status, 1, merge.stderr);
+  assert.match(merge.stdout + merge.stderr, /CONFLICT/);
+  git(cwd, "rm", "-q", "-f", "ui/dist/assets/index-old.js");
+  git(cwd, "add", "-A");
+  git(cwd, "commit", "-qm", "Merge upstream main");
+
+  if (extraBlockedOccurrence) {
+    writeFileSync(
+      join(cwd, "ui", "dist", "assets", "index-new.js"),
+      `export const labels = [${JSON.stringify(productOnlyPhrase)}, ${JSON.stringify(productOnlyPhrase)}, ${JSON.stringify(productOnlyPhrase)}]; export const duration = 3;\n`,
+    );
+    git(cwd, "add", "-f", "ui/dist/assets/index-new.js");
+    git(cwd, "commit", "-qm", "add new blocked occurrence");
+  }
+
+  return { cwd, remote, forkBase, upstreamBase, tip: git(cwd, "rev-parse", "HEAD") };
+}
+
+function createGitHubApiStub(root, {
+  fork = true,
+  compareStatus = "ahead",
+  ownerLogin = "Tiancheng-Xu",
+  parentPrivate = false,
+  parentVisibility = "public",
+  includeParentVisibility = true,
+  apiAvailable = true,
+} = {}) {
+  const bin = join(root, "fake-gh-bin");
+  mkdirSync(bin, { recursive: true });
+  const shim = join(bin, "gh");
+  writeFileSync(
+    shim,
+    `#!/usr/bin/env node
+const endpoint = process.argv.at(-1);
+const fork = ${JSON.stringify(fork)};
+const compareStatus = ${JSON.stringify(compareStatus)};
+const ownerLogin = ${JSON.stringify(ownerLogin)};
+const parentPrivate = ${JSON.stringify(parentPrivate)};
+const parentVisibility = ${JSON.stringify(parentVisibility)};
+const includeParentVisibility = ${JSON.stringify(includeParentVisibility)};
+const apiAvailable = ${JSON.stringify(apiAvailable)};
+let response;
+if (!apiAvailable) process.exit(1);
+if (endpoint === "repos/Tiancheng-Xu/OpenResearch") {
+  response = { full_name: "Tiancheng-Xu/OpenResearch", owner: { login: ownerLogin }, fork, parent: fork ? { full_name: "alphaXiv/OpenResearch", default_branch: "main", private: parentPrivate, ...(includeParentVisibility ? { visibility: parentVisibility } : {}) } : null };
+} else if (endpoint.startsWith("repos/alphaXiv/OpenResearch/compare/")) {
+  const commit = endpoint.split("compare/").at(-1).split("...")[0];
+  response = { status: compareStatus, base_commit: { sha: commit }, merge_base_commit: { sha: commit } };
+} else {
+  process.stderr.write("unexpected API endpoint\\n");
+  process.exit(1);
+}
+process.stdout.write(JSON.stringify(response));
+`,
+  );
+  chmodSync(shim, 0o755);
+  return { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` };
+}
+
+function runPrePushPolicy(cwd, tip, forkBase, env) {
+  return spawnSync(
+    process.execPath,
+    [
+      policyScript,
+      "--mode", "pre-push",
+      "--root", cwd,
+      "--remote-name", "origin",
+      "--remote-location", "https://github.com/Tiancheng-Xu/OpenResearch.git",
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      env,
+      input: `refs/heads/feature ${tip} refs/heads/main ${forkBase}\n`,
+    },
+  );
 }
 
 test("accepts a commit authored and committed by the configured owner", () => {
@@ -329,6 +461,34 @@ test("scans the full tracked tree and reports configured public wording", () => 
     ["legacy.md"],
   );
   assert.equal(violations[0].code, "blocked-public-content");
+});
+
+test("uses the newest verified upstream baseline when multiple merged baselines are ancestors", () => {
+  const cwd = createRepository();
+  mkdirSync(join(cwd, "ui"), { recursive: true });
+  const labelsPath = join(cwd, "ui", "labels.json");
+  writeFileSync(labelsPath, JSON.stringify({ labels: [productOnlyPhrase] }));
+  git(cwd, "add", "ui/labels.json");
+  git(cwd, "commit", "-qm", "first upstream baseline");
+  const firstBaseline = git(cwd, "rev-parse", "HEAD");
+
+  writeFileSync(labelsPath, JSON.stringify({ labels: [productOnlyPhrase, productOnlyPhrase] }));
+  git(cwd, "add", "ui/labels.json");
+  git(cwd, "commit", "-qm", "newer upstream baseline");
+  const newerBaseline = git(cwd, "rev-parse", "HEAD");
+
+  writeFileSync(labelsPath, JSON.stringify({ labels: [productOnlyPhrase, productOnlyPhrase, "safe"] }));
+  git(cwd, "add", "ui/labels.json");
+  git(cwd, "commit", "-qm", "owner update based on newer upstream");
+  const tip = git(cwd, "rev-parse", "HEAD");
+
+  const violations = scanCandidateTree(cwd, {
+    revision: tip,
+    blockedTerms: [productOnlyPhrase],
+    publicContentBaselines: [firstBaseline, newerBaseline],
+  });
+
+  assert.deepEqual(violations, []);
 });
 
 for (const revision of [undefined, "HEAD"]) {
@@ -723,6 +883,94 @@ test("pre-push hook allows a compliant owner tree", () => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout + result.stderr, /Repository policy passed/);
+});
+
+test("pre-push accepts only inherited history and content verified in a fork parent", () => {
+  const { cwd, forkBase, tip } = createVerifiedForkPushFixture();
+  const env = createGitHubApiStub(dirname(cwd));
+  const result = runPrePushPolicy(cwd, tip, forkBase, env);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Repository policy passed/);
+});
+
+test("pre-push retains a verified upstream baseline after its merge is already on the fork", () => {
+  const { cwd, forkBase, tip: mergedTip } = createVerifiedForkPushFixture();
+  writeFileSync(join(cwd, "README.md"), "owner follow-up\n");
+  git(cwd, "add", "README.md");
+  git(cwd, "commit", "-qm", "owner follow-up after upstream merge");
+  const tip = git(cwd, "rev-parse", "HEAD");
+  const env = createGitHubApiStub(dirname(cwd));
+  const result = runPrePushPolicy(cwd, tip, mergedTip, env);
+
+  assert.notEqual(mergedTip, forkBase);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Repository policy passed/);
+});
+
+test("pre-push still rejects newly added blocked content above the verified fork baseline", () => {
+  const { cwd, forkBase, tip } = createVerifiedForkPushFixture({ extraBlockedOccurrence: true });
+  const env = createGitHubApiStub(dirname(cwd));
+  const result = runPrePushPolicy(cwd, tip, forkBase, env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /blocked-public-content.*ui\/dist\/assets\/index-new\.js/);
+});
+
+test("pre-push does not trust upstream authors or assets without verified fork ancestry", () => {
+  const { cwd, forkBase, tip } = createVerifiedForkPushFixture();
+  const env = createGitHubApiStub(dirname(cwd), { compareStatus: "diverged" });
+  const result = runPrePushPolicy(cwd, tip, forkBase, env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /author-owner-mismatch/);
+  assert.match(result.stderr, /content-decoding-failed.*CNS2-V\.bcmap/);
+});
+
+test("pre-push does not infer a trusted parent from a repository that is not a fork", () => {
+  const { cwd, forkBase, tip } = createVerifiedForkPushFixture();
+  const env = createGitHubApiStub(dirname(cwd), { fork: false });
+  const result = runPrePushPolicy(cwd, tip, forkBase, env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /author-owner-mismatch/);
+});
+
+test("pre-push does not trust content or authors from a private fork parent", () => {
+  const { cwd, forkBase, tip } = createVerifiedForkPushFixture();
+  const env = createGitHubApiStub(dirname(cwd), { parentPrivate: true, parentVisibility: "private" });
+  const result = runPrePushPolicy(cwd, tip, forkBase, env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /author-owner-mismatch/);
+  assert.match(result.stderr, /content-decoding-failed.*CNS2-V\.bcmap/);
+});
+
+test("pre-push does not trust a fork parent when GitHub visibility is missing", () => {
+  const { cwd, forkBase, tip } = createVerifiedForkPushFixture();
+  const env = createGitHubApiStub(dirname(cwd), { includeParentVisibility: false });
+  const result = runPrePushPolicy(cwd, tip, forkBase, env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /author-owner-mismatch/);
+});
+
+test("pre-push does not trust fork metadata owned by another account", () => {
+  const { cwd, forkBase, tip } = createVerifiedForkPushFixture();
+  const env = createGitHubApiStub(dirname(cwd), { ownerLogin: "someone-else" });
+  const result = runPrePushPolicy(cwd, tip, forkBase, env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /author-owner-mismatch/);
+});
+
+test("pre-push keeps the strict gate when the GitHub API is unavailable", () => {
+  const { cwd, forkBase, tip } = createVerifiedForkPushFixture();
+  const env = createGitHubApiStub(dirname(cwd), { apiAvailable: false });
+  const result = runPrePushPolicy(cwd, tip, forkBase, env);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /author-owner-mismatch/);
 });
 
 function createInheritedEncodingFixture(path = "tests/fixtures/invalid.js", content) {

@@ -60,8 +60,26 @@ file entry (path, blob, and mode) exists in an ancestor confirmed on the actual
 push destination. Only test/fixture directories qualify, not documentation or public
 build outputs. New or changed samples, product files, unrelated history, and
 unverified local refs still fail strict UTF-8 decoding. Readable wording in an
-inherited sample is still scanned using replacement decoding. Audit and CI modes
-remain strict; this adds no configurable path allowlist or author exemption.
+inherited sample is still scanned using replacement decoding.
+
+During pre-push, the policy may recognize history imported through a two-parent
+merge among the candidate's five most recent merge commits. This exception
+requires GitHub API metadata to confirm that the destination is a fork owned by
+the configured human account, that its parent is public, and a compare response
+to prove the merge's second parent is an ancestor of that parent repository's
+current default branch. If `gh` or the public API is unavailable, metadata does
+not match or is incomplete, or ancestry is not proven, the ordinary strict
+checks remain in force. Only commits reachable from the verified upstream
+parent are excluded from owner-attribution checks; the merge commit and other
+outgoing commits are still checked. For tracked content, an inherited file is
+exempt only when path, blob, and mode match exactly, or when Git's rename
+detection maps the upstream file to the candidate path with the same
+regular-file mode. Changed readable text is still scanned: each blocked term's
+occurrence count may not exceed its verified upstream baseline. When verified
+merge parents are ancestor-related, only the newest baseline is used;
+incomparable baselines remain separate and the strictest count applies. This
+exception is limited to pre-push tracked-tree checks; audit and CI modes remain
+strict and no configurable path allowlist or author exemption is added.
 
 Each adopting repository must keep the byte-for-byte canonical caller at
 `.github/workflows/repository-policy.yml`; the central workflow remains
