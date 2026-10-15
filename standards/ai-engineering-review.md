@@ -6,6 +6,8 @@ AI、Agent、RAG、模型路由或多模态产品代码必须提交 `docs/eviden
 
 根目录 `README*`、`CHANGELOG*`、`LICENSE*`、`CONTRIBUTING*`，以及 `docs/architecture/**`、`docs/delivery/**`、`docs/evidence/**`、`docs/qa/**`、`docs/superpowers/**` 不作为 AI Gate 触发依据。该白名单不影响秘密、PII、公开内容、身份与仓库策略扫描。
 
+精确路径 `agent-capabilities.json` 和 `docs/agent-interface.md` 作为既有工具的能力目录与接口说明，不因文件名触发 AI Gate；内容出现检测范围内的 AI 依赖或 import、文件不可读、仓库包含其他 AI 产品代码，或已有评测合约时，仍执行相应检查。该分类不影响其他内容与身份策略扫描。
+
 合约最小字段：
 
 ```json
