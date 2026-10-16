@@ -118,6 +118,7 @@ function git(root, args, options = {}) {
   return execFileSync("git", args, {
     cwd: root,
     encoding: options.encoding ?? "utf8",
+    env: options.env,
     input: options.input,
     maxBuffer: 512 * 1024 * 1024,
   });
@@ -153,10 +154,10 @@ function isNonProductProjectMaterial(path) {
   );
 }
 
-function inspectBuffer(buffer, blockedTerms) {
+function inspectBuffer(buffer, blockedTerms, allowInvalidEncoding = false) {
   if (buffer.includes(0)) return { binary: true, policyTerms: [] };
   try {
-    const content = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    const content = new TextDecoder("utf-8", { fatal: !allowInvalidEncoding }).decode(buffer);
     const lower = content.toLowerCase();
     return {
       binary: false,
@@ -248,9 +249,17 @@ function trackedBlobIsBinary(root, path, revision) {
 
 function trackedPaths(root, revision) {
   const args = revision
-    ? ["ls-tree", "-r", "--name-only", "-z", revision]
-    : ["ls-files", "-z", "--cached", "--others", "--exclude-standard"];
-  return git(root, args).split("\0").filter(Boolean);
+    ? ["ls-tree", "-r", "-z", revision]
+    : ["ls-files", "--stage", "-z", "--cached"];
+  // Gitlinks store a submodule commit, not readable superproject content.
+  // Keep the mode metadata so only those entries are excluded, not filenames.
+  const indexedPaths = git(root, args).split("\0")
+    .filter((entry) => entry && !entry.startsWith("160000 "))
+    .map((entry) => entry.slice(entry.indexOf("\t") + 1));
+  if (revision) return indexedPaths;
+  const untrackedPaths = git(root, ["ls-files", "-z", "--others", "--exclude-standard"])
+    .split("\0").filter(Boolean);
+  return [...new Set([...indexedPaths, ...untrackedPaths])];
 }
 
 function trackedBuffer(root, path, revision) {
@@ -305,17 +314,42 @@ function contentViolations(root, paths, options) {
       });
       continue;
     }
-    const inspection = inspectBuffer(buffer, options.blockedTerms);
+    const inherited = options.inheritedPublicContent?.(path, buffer);
+    if (inherited?.exact) continue;
+    let inspection = inspectBuffer(buffer, options.blockedTerms);
     if (inspection.binary) continue;
     if (inspection.decodingFailed) {
-      violations.push({
-        code: "content-decoding-failed",
-        path,
-        scope: options.scope,
-      });
-      continue;
+      if (!options.inheritedEncodingFixture?.(path)) {
+        violations.push({
+          code: "content-decoding-failed",
+          path,
+          scope: options.scope,
+        });
+        continue;
+      }
+      // Keep scanning readable wording in inherited malformed test data.
+      inspection = inspectBuffer(buffer, options.blockedTerms, true);
     }
-    for (const policyTerm of inspection.policyTerms) {
+    const policyTerms = inherited?.baselineSpecifications?.length
+      ? inspection.policyTerms.filter((policyTerm) => {
+        const termIndex = Number(policyTerm.slice("policy-term-".length)) - 1;
+        const term = options.blockedTerms[termIndex];
+        if (typeof term !== "string" || !term) return true;
+        const candidateCount = countTextOccurrences(buffer, term);
+        const baselineCounts = inherited.baselineSpecifications.map((specification) => {
+          try {
+            return countTextOccurrences(
+              git(root, ["cat-file", "blob", specification], { encoding: "buffer" }),
+              term,
+            );
+          } catch {
+            return 0;
+          }
+        });
+        return candidateCount > Math.min(...baselineCounts);
+      })
+      : inspection.policyTerms;
+    for (const policyTerm of policyTerms) {
       violations.push({
         code: "blocked-public-content",
         path,
@@ -325,6 +359,18 @@ function contentViolations(root, paths, options) {
     }
   }
   return violations;
+}
+
+function countTextOccurrences(buffer, term) {
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer).toLowerCase();
+  const needle = String(term).toLowerCase();
+  let count = 0;
+  let position = 0;
+  while ((position = text.indexOf(needle, position)) !== -1) {
+    count += 1;
+    position += Math.max(needle.length, 1);
+  }
+  return count;
 }
 
 function evidenceManifestViolations(root, paths, revision) {
@@ -479,6 +525,14 @@ export function scanCandidateTree(root, options = {}) {
       blockedTerms,
       read: (path) => trackedBuffer(repositoryRoot, path, revision),
       isBinary: (path) => trackedBlobIsBinary(repositoryRoot, path, revision),
+      inheritedPublicContent: inheritedPublicContentChecker(
+        repositoryRoot,
+        revision,
+        options.publicContentBaselines ?? [],
+      ),
+      inheritedEncodingFixture: inheritedEncodingFixtureChecker(
+        repositoryRoot, revision, options.encodingBaselines ?? [],
+      ),
       scope: "tracked-tree",
     },
   );
@@ -745,7 +799,9 @@ function parseArguments(argv) {
 
 function hasObject(root, revision) {
   try {
-    git(root, ["cat-file", "-e", revision]);
+    git(root, ["cat-file", "-e", revision], {
+      env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
+    });
     return true;
   } catch {
     return false;
@@ -775,14 +831,16 @@ function remoteCommitTips(root, remoteLocation) {
     .trim()
     .split("\n")
     .map((line) => line.trim().split(/\s+/, 2));
-  const missingRefs = rows
-    .filter(([oid]) => !hasObject(root, oid))
-    .map(([, ref]) => ref);
-  fetchRemoteRefs(root, remoteLocation, missingRefs);
   const tips = [];
   for (const [oid] of rows) {
+    // Only exclude commits proven present on the destination remote. Missing
+    // unrelated tips stay out of the exclusion set: that audits more commits,
+    // never fewer, and avoids fetching every old tag in a partial clone.
+    if (!hasObject(root, oid)) continue;
     try {
-      tips.push(git(root, ["rev-parse", "--verify", `${oid}^{commit}`]).trim());
+      tips.push(git(root, ["rev-parse", "--verify", `${oid}^{commit}`], {
+        env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
+      }).trim());
     } catch {
       // Non-commit tag targets do not provide a commit baseline.
     }
@@ -801,19 +859,232 @@ function ensureRemoteCommit(root, remoteLocation, remoteRef, remoteSha) {
   }
 }
 
-function pendingCommits(root, localSha, remoteSha, remoteRef, remoteLocation) {
+function parseGitHubRemote(remoteLocation) {
+  const value = String(remoteLocation ?? "").trim();
+  let match = value.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/i);
+  if (!match) match = value.match(/^git@github\.com:([^/]+)\/([^/]+)$/i);
+  if (!match) return undefined;
+  const owner = match[1];
+  const repository = match[2].replace(/\.git$/i, "");
+  if (
+    !/^[A-Za-z0-9_.-]+$/.test(owner) ||
+    !/^[A-Za-z0-9_.-]+$/.test(repository) ||
+    owner === "." || owner === ".." || repository === "." || repository === ".."
+  ) return undefined;
+  return { owner, repository, slug: `${owner}/${repository}` };
+}
+
+function githubApiJson(endpoint) {
+  const result = spawnSync("gh", ["api", "--hostname", "github.com", endpoint], {
+    encoding: "utf8",
+    timeout: 10_000,
+    maxBuffer: 2 * 1024 * 1024,
+    env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
+  });
+  if (result.error || result.status !== 0) return undefined;
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    return undefined;
+  }
+}
+
+function verifiedForkMetadata(remoteLocation, owner) {
+  const remote = parseGitHubRemote(remoteLocation);
+  if (!remote || !normalized(owner?.name)) return undefined;
+  const repository = githubApiJson(`repos/${remote.slug}`);
+  if (
+    !repository ||
+    repository.fork !== true ||
+    normalized(repository.owner?.login) !== normalized(owner.name) ||
+    normalized(repository.full_name) !== normalized(remote.slug) ||
+    !repository.parent ||
+    repository.parent.private !== false ||
+    repository.parent.visibility !== "public" ||
+    typeof repository.parent.full_name !== "string" ||
+    typeof repository.parent.default_branch !== "string" ||
+    !repository.parent.default_branch
+  ) return undefined;
+  const parentMatch = repository.parent.full_name.match(/^([^/]+)\/([^/]+)$/);
+  if (!parentMatch || !/^[A-Za-z0-9_.-]+$/.test(parentMatch[1]) || !/^[A-Za-z0-9_.-]+$/.test(parentMatch[2])) {
+    return undefined;
+  }
+  return {
+    slug: repository.parent.full_name,
+    defaultBranch: repository.parent.default_branch,
+  };
+}
+
+function verifiesUpstreamAncestor(parent, commit) {
+  const endpoint = `repos/${parent.slug}/compare/${encodeURIComponent(commit)}...${encodeURIComponent(parent.defaultBranch)}`;
+  const comparison = githubApiJson(endpoint);
+  const status = comparison?.status;
+  return (
+    (status === "ahead" || status === "identical") &&
+    normalized(comparison.base_commit?.sha) === normalized(commit) &&
+    normalized(comparison.merge_base_commit?.sha) === normalized(commit)
+  );
+}
+
+function verifiedForkMergeParents(root, localSha, remoteLocation, owner) {
+  const mergeCommits = git(root, ["rev-list", "--merges", "--max-count=5", localSha])
+    .split("\n")
+    .filter(Boolean)
+    .filter((commit) =>
+      git(root, ["show", "-s", "--format=%P", commit]).trim().split(/\s+/).filter(Boolean).length === 2,
+    );
+  if (mergeCommits.length === 0) return [];
+  const parent = verifiedForkMetadata(remoteLocation, owner);
+  if (!parent) return [];
+  const verified = [];
+  for (const mergeCommit of mergeCommits) {
+    const parents = git(root, ["show", "-s", "--format=%P", mergeCommit]).trim().split(/\s+/);
+    const upstreamSide = parents[1];
+    if (/^[0-9a-f]{40,64}$/i.test(upstreamSide) && verifiesUpstreamAncestor(parent, upstreamSide)) {
+      verified.push(upstreamSide);
+    }
+  }
+  return [...new Set(verified)];
+}
+
+function pendingPush(root, localSha, remoteSha, remoteRef, remoteLocation, owner) {
+  let commits;
+  let encodingBaselines;
   if (remoteSha && !isNullOid(remoteSha)) {
     ensureRemoteCommit(root, remoteLocation, remoteRef, remoteSha);
-    return git(root, ["rev-list", `${remoteSha}..${localSha}`])
-      .split("\n")
-      .filter(Boolean);
+    commits = git(root, ["rev-list", `${remoteSha}..${localSha}`]).split("\n").filter(Boolean);
+    encodingBaselines = [remoteSha];
+  } else {
+    const remoteTips = remoteCommitTips(root, remoteLocation);
+    const args = ["rev-list", localSha];
+    if (remoteTips.length > 0) args.push("--not", ...remoteTips);
+    commits = git(root, args).split("\n").filter(Boolean);
+    encodingBaselines = remoteTips;
   }
-  const remoteTips = remoteCommitTips(root, remoteLocation);
-  const args = ["rev-list", localSha];
-  if (remoteTips.length > 0) args.push("--not", ...remoteTips);
-  return git(root, args)
-    .split("\n")
-    .filter(Boolean);
+
+  const publicContentBaselines = verifiedForkMergeParents(
+    root,
+    localSha,
+    remoteLocation,
+    owner,
+  );
+  const upstreamHistory = new Set();
+  for (const baseline of publicContentBaselines) {
+    for (const sha of git(root, ["rev-list", baseline]).split("\n").filter(Boolean)) {
+      upstreamHistory.add(sha);
+    }
+  }
+  return {
+    commits: commits.filter((commit) => !upstreamHistory.has(commit)),
+    encodingBaselines,
+    publicContentBaselines,
+  };
+}
+
+function trackedTreeEntries(root, revision) {
+  const entries = new Map();
+  for (const record of git(root, ["ls-tree", "-r", "-z", revision]).split("\0")) {
+    if (!record) continue;
+    const separator = record.indexOf("\t");
+    if (separator === -1) continue;
+    const [mode, type, oid] = record.slice(0, separator).split(" ");
+    if (type !== "blob" || !/^100(?:644|755)$/.test(mode ?? "") || !/^[0-9a-f]{40,64}$/i.test(oid ?? "")) continue;
+    entries.set(record.slice(separator + 1), { mode, oid });
+  }
+  return entries;
+}
+
+function inheritedPublicContentChecker(root, revision, baselines) {
+  const matches = new Map();
+  if (!revision || baselines.length === 0) return () => undefined;
+  const uniqueBaselines = [...new Set(baselines)];
+  const latestBaselines = uniqueBaselines.filter((baseline) =>
+    !uniqueBaselines.some((other) => {
+      if (baseline === other) return false;
+      return spawnSync("git", ["merge-base", "--is-ancestor", baseline, other], {
+        cwd: root,
+        env: { ...process.env, GIT_NO_LAZY_FETCH: "1" },
+        stdio: "ignore",
+      }).status === 0;
+    }),
+  );
+  const candidateEntries = trackedTreeEntries(root, revision);
+
+  function record(candidatePath, baselineEntry, candidateEntry) {
+    if (!baselineEntry || !candidateEntry || baselineEntry.mode !== candidateEntry.mode) return;
+    const match = matches.get(candidatePath) ?? { exact: false, baselineOids: new Set() };
+    if (baselineEntry.oid === candidateEntry.oid) match.exact = true;
+    else match.baselineOids.add(baselineEntry.oid);
+    matches.set(candidatePath, match);
+  }
+
+  for (const baseline of latestBaselines) {
+    const baselineEntries = trackedTreeEntries(root, baseline);
+    for (const [path, candidateEntry] of candidateEntries) {
+      record(path, baselineEntries.get(path), candidateEntry);
+    }
+
+    const diff = git(root, [
+      "diff",
+      "--find-renames",
+      "--name-status",
+      "-z",
+      baseline,
+      revision,
+      "--",
+    ]).split("\0").filter(Boolean);
+    for (let index = 0; index < diff.length;) {
+      const status = diff[index++];
+      if (!/^R\d{1,3}$/.test(status)) {
+        index += 1;
+        continue;
+      }
+      const oldPath = diff[index++];
+      const newPath = diff[index++];
+      record(newPath, baselineEntries.get(oldPath), candidateEntries.get(newPath));
+    }
+  }
+
+  return (path) => {
+    const match = matches.get(path);
+    if (!match) return undefined;
+    if (match.exact) return { exact: true };
+    const baselineSpecifications = [...match.baselineOids];
+    return baselineSpecifications.length > 0 ? { baselineSpecifications } : undefined;
+  };
+}
+
+function inheritedEncodingFixtureChecker(root, revision, baselines) {
+  const ancestors = new Map();
+  const localOnly = { env: { ...process.env, GIT_NO_LAZY_FETCH: "1" } };
+  function regularFileEntry(at, path) {
+    const entries = git(root, ["ls-tree", "-z", at, "--", path], localOnly).split("\0");
+    return entries.find((entry) =>
+      /^100(?:644|755) blob /.test(entry) && entry.slice(entry.indexOf("\t") + 1) === path,
+    );
+  }
+  return (path) => {
+    if (!revision || baselines.length === 0 ||
+      !/(?:^|\/)(?:tests?|fixtures?)\//.test(path) ||
+      /(?:^|\/)(?:docs?|documentation)\//i.test(path) ||
+      /(?:^|\/)(?:readme|changelog|contributing|code_of_conduct)(?:\.|$)/i.test(path) ||
+      /\.(?:md|mdx|markdown|mdown|mkd|rst|rest|adoc|asciidoc|org|rtf|textile|tex)$/i.test(path)) return false;
+    try {
+      const candidate = regularFileEntry(revision, path);
+      if (!candidate) return false;
+      for (const baseline of baselines) {
+        if (!ancestors.has(baseline)) {
+          ancestors.set(baseline, spawnSync("git", ["merge-base", "--is-ancestor", baseline, revision], {
+            cwd: root, env: localOnly.env, stdio: "ignore",
+          }).status === 0);
+        }
+        if (ancestors.get(baseline) && regularFileEntry(baseline, path) === candidate) return true;
+      }
+    } catch {
+      // Missing objects or failed comparisons never authorize an exception.
+    }
+    return false;
+  };
 }
 
 function readPushTuples() {
@@ -845,22 +1116,26 @@ export function runCli(argv = process.argv.slice(2)) {
       if (isNullOid(localSha)) continue;
       violations.push(...validateRefName(localRef));
       violations.push(...validateRefName(remoteRef));
+      const pending = pendingPush(
+        root,
+        localSha,
+        remoteSha,
+        remoteRef,
+        options.remoteLocation,
+        owner,
+      );
       violations.push(
         ...inspectCommitList(
           root,
-          pendingCommits(
-            root,
-            localSha,
-            remoteSha,
-            remoteRef,
-            options.remoteLocation,
-          ),
+          pending.commits,
           owner,
         ),
       );
       violations.push(
         ...scanCandidateTree(root, {
           revision: localSha,
+          encodingBaselines: pending.encodingBaselines,
+          publicContentBaselines: pending.publicContentBaselines,
           buildOutputPaths,
         }),
       );

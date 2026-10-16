@@ -108,6 +108,12 @@ Silently relying on a local hook is not accepted.
   post-build directory is a blocking error, never a warning.
 - A binary decoding failure is reported with the path and skipped only when the file
   is positively classified as binary.
+- User-approved exception (2026-10-06): local pre-push may preserve malformed
+  test/fixture data only when its exact regular-file path, blob, and mode match
+  an ancestor confirmed on the actual push destination. Readable wording is
+  still scanned. New/changed entries, product files, documentation, configured
+  public outputs, unverified refs, audit and CI remain strict; no configurable
+  path allowlist or author exemption is introduced.
 - A repository with legacy violations receives a deterministic path list and remains
   blocked until sanitized.
 - A remote repository that cannot run Actions is recorded as blocked; it is not
