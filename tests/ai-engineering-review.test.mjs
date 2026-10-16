@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { AI_ENGINEERING_REVIEW_PATH, scanCandidateTree } from "../scripts/repository-policy.mjs";
+import { aiEngineeringReviewViolations } from "../scripts/ai-engineering-policy.mjs";
 
 function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" });
@@ -85,6 +86,71 @@ test("does not trigger from allowlisted documentation", () => {
     scanCandidateTree(root).filter((item) => item.code.startsWith("ai-engineering-")),
     [],
   );
+});
+
+const toolingReferences = [
+  ["agent-capabilities.json", JSON.stringify({ runtime: "no-new-runtime", automaticExecution: false, tools: [] })],
+  ["docs/agent-interface.md", "# Existing CLI and Action verification contracts\n"],
+];
+
+for (const [path, content] of toolingReferences) {
+  test(`does not mistake a tooling reference for AI product code: ${path}`, () => {
+    const root = repository();
+    write(root, path, content);
+    assert.deepEqual(scanCandidateTree(root).filter((item) => item.code.startsWith("ai-engineering-")), []);
+  });
+
+  test(`still scans a tooling reference for blocked public content: ${path}`, () => {
+    const root = repository();
+    write(root, path, String.fromCodePoint(0x4f5c, 0x4e1a));
+    assert.ok(scanCandidateTree(root).some((item) => item.path === path && !item.code.startsWith("ai-engineering-")));
+  });
+
+  for (const aiContent of [
+    '{"dependencies":{"@langchain/core":"1.0.0"}}',
+    'import { RunnableLambda } from "@langchain/core/runnables";\n',
+  ]) {
+    test(`requires a contract for AI dependency or import content in ${path}: ${aiContent.trim()}`, () => {
+      const root = repository();
+      write(root, path, aiContent);
+      assert.ok(scanCandidateTree(root).some((item) => item.code === "ai-engineering-review-contract-missing"));
+    });
+  }
+}
+
+for (const [path, content] of [
+  ...["agent-capabilities.js", "agent-capabilities.py", "docs/agent-interface.js", "docs/agent-interface.py",
+    "agent-capabilities.json.ts", "nested/agent-capabilities.json", "src/agent.ts", "agents/config.json", "rag/config.yaml"]
+    .map((path) => [path, "Product runtime or configuration\n"]),
+  ["package.json", '{"dependencies":{"@langchain/core":"1.0.0"}}'],
+  ["src/main.ts", 'import { RunnableLambda } from "@langchain/core/runnables";\n'],
+  ["src/main.js", 'const runtime = require("mastra");\n'],
+  ["src/main.mjs", 'const runtime = import("ollama");\n'],
+]) {
+  test(`tooling references do not exempt product paths, dependencies or imports: ${path}`, () => {
+    const root = repository();
+    for (const [referencePath, referenceContent] of toolingReferences) write(root, referencePath, referenceContent);
+    write(root, path, content);
+    assert.ok(scanCandidateTree(root).some((item) => item.code === "ai-engineering-review-contract-missing"));
+  });
+}
+
+test("tooling references do not suppress validation of an existing contract", () => {
+  const root = repository();
+  for (const [path, content] of toolingReferences) write(root, path, content);
+  write(root, AI_ENGINEERING_REVIEW_PATH, "{}");
+  assert.ok(scanCandidateTree(root).some((item) => item.code === "ai-engineering-review-schema-invalid"));
+});
+
+test("unreadable tooling references still require a contract", () => {
+  for (const [path] of toolingReferences) {
+    assert.deepEqual(aiEngineeringReviewViolations({
+      paths: [path],
+      read: () => { throw new Error("unreadable reference"); },
+      isExcluded: () => false,
+      isNonProduct: () => false,
+    }), [{ code: "ai-engineering-review-contract-missing", path: AI_ENGINEERING_REVIEW_PATH }]);
+  }
 });
 
 test("accepts a complete AI engineering review contract", () => {

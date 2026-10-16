@@ -1,6 +1,7 @@
 export const AI_ENGINEERING_REVIEW_PATH = "docs/evidence/ai-engineering-review.json";
 
 const ROOT_DOC = /^(?:readme|changelog|contributing|license)(?:\.[a-z0-9_-]+)?$/i;
+const TOOLING_REFERENCE = /^(?:agent-capabilities\.json|docs\/agent-interface\.md)$/;
 const PRODUCT_PATH =
   /(?:^|\/)(?:agents?|local-agent-runner|rag|retriever|reranker|model-router|model-routing|orchestrator)(?:[./_-]|$)/i;
 const DEPENDENCY =
@@ -125,10 +126,20 @@ export function validateAiEngineeringReviewContract(contract) {
   return violations;
 }
 
+function isToolingReference(path, read) {
+  if (!TOOLING_REFERENCE.test(path)) return false;
+  try {
+    const content = read(path).toString("utf8");
+    return !DEPENDENCY.test(content) && !AI_IMPORT.test(content);
+  } catch {
+    return false;
+  }
+}
+
 function hasTrigger({ paths, read, isExcluded, isNonProduct }) {
   for (const path of paths) {
     if (isExcluded(path) || ROOT_DOC.test(path) || isNonProduct(path)) continue;
-    if (PRODUCT_PATH.test(path)) return true;
+    if (PRODUCT_PATH.test(path) && !isToolingReference(path, read)) return true;
     if (!/(?:^|\/)(?:package\.json|[^/]+\.[cm]?[jt]sx?|[^/]+\.py)$/i.test(path)) continue;
     let content;
     try {
